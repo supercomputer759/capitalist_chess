@@ -31,6 +31,14 @@
     progressive:ctx=>movementHandlers.king(ctx),
     random_on_purchase:ctx=>movementHandlers.pawn(ctx),
     dynamic:ctx=>movementHandlers.king(ctx)
+    ,ranged_capture:ctx=>{
+      const out=[],range=Math.max(1,Number(ctx.movement?.range)||3),dirs=vectors.queen;
+      for(const [dr,dc] of dirs)for(let step=1;step<=range;step++){
+        const rr=ctx.r+dr*step,cc=ctx.c+dc*step;if(!inside(rr,cc))break;
+        if(ctx.board[rr][cc]){if(ctx.board[rr][cc].color!==ctx.p.color)out.push({r:rr,c:cc});break;}
+      }
+      return out;
+    }
   };
   function movementPreviewCells(movement={}){
     if(movement.preview?.cells)return movement.preview.cells;

@@ -1,0 +1,21 @@
+Capitalist Chess - selected audio bundle
+
+SFX source: user-provided sfx.zip
+Selected/renamed files:
+click.ogg        <- click_005.ogg
+select.ogg       <- select_002.ogg
+move.ogg         <- drop_001.ogg
+capture.ogg      <- drop_004.ogg
+buy.ogg          <- confirmation_003.ogg
+error.ogg        <- error_002.ogg
+check.ogg        <- alarm2.wav (converted to OGG)
+brilliant.ogg    <- Ding.wav (converted to OGG)
+rare-restock.ogg <- confirmation_004.ogg
+
+BGM source: user-provided bgm.zip
+bgm_market_01.ogg   <- alex-morgan-jazz-corporate-background-music-556245.mp3
+bgm_market_02.ogg   <- alex-morgan-corporate-jazz-midnight-club-556700.mp3
+bgm_strategy_01.ogg <- niknet_art-luxury-lounge-jazz-groove-418334.mp3
+
+The BGM filenames indicate Pixabay-style creator/title identifiers. Keep the original source/download records and verify the applicable license before redistribution.
+For SFX, retain the original pack's license/readme alongside this bundle when distributing the game.

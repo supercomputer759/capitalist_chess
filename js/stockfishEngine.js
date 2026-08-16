@@ -10,16 +10,27 @@
       this.initPromise=new Promise((resolve,reject)=>{
         try{
           this.emit("loading");
-          const workerUrl=new URL("engine/stockfish-18-lite-single.js",document.baseURI);
-          workerUrl.hash="stockfish-18-lite-single.wasm,worker";
-          const worker=new Worker(workerUrl.href);this.worker=worker;
+          const workerUrl = new URL(
+            "./engine/stockfish-18-lite-single.js",
+            document.baseURI
+          );
+          const worker = new Worker(workerUrl.href);
           let uciOk=false,readyOk=false;
           const timer=setTimeout(()=>{if(!readyOk){const error=new Error("Stockfish ready timeout");this.fail(error);reject(error);}},12000);
           worker.onmessage=e=>{
-            const line=String(e.data||"");
-            if(line.includes("uciok")){uciOk=true;worker.postMessage("isready");}
-            if(line.includes("readyok")){readyOk=true;clearTimeout(timer);this.ready=true;this.emit("ready");resolve(this);}
-            if(this.pending)this.handlePendingLine(line);
+            // Stockfish.js는 여러 UCI 응답을 한 메시지에 묶어 보낼 수 있다.
+            const lines=String(e.data||"").split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+            lines.forEach(line=>{
+              if(line.includes("uciok")){uciOk=true;worker.postMessage("isready");}
+              if(line.includes("readyok") && !readyOk){
+                readyOk=true;
+                clearTimeout(timer);
+                this.ready=true;
+                this.emit("ready");
+                resolve(this);
+              }
+              if(this.pending)this.handlePendingLine(line);
+            });
           };
           worker.onerror=e=>{clearTimeout(timer);const error=new Error(e.message||"Stockfish worker error");this.fail(error);reject(error);};
           worker.onmessageerror=()=>{clearTimeout(timer);const error=new Error("Stockfish worker message error");this.fail(error);reject(error);};
@@ -33,10 +44,12 @@
     handlePendingLine(line){
       const request=this.pending;
       if(!request)return;
-      const depth=line.match(/\bdepth\s+(\d+)/);if(depth)request.depth=Number(depth[1]);
-      const cp=line.match(/\bscore\s+cp\s+(-?\d+)/);if(cp)request.score={type:"cp",value:Number(cp[1])};
-      const mate=line.match(/\bscore\s+mate\s+(-?\d+)/);if(mate)request.score={type:"mate",value:Number(mate[1])};
-      if(line.startsWith("bestmove")){const best=line.split(/\s+/)[1]||null;clearTimeout(request.timeout);this.pending=null;this.emit("ready");request.resolve({bestmove:best,depth:request.depth||0,score:request.score});}
+      const clean=String(line||"").trim();
+      const depth=clean.match(/\bdepth\s+(\d+)/);if(depth)request.depth=Number(depth[1]);
+      const cp=clean.match(/\bscore\s+cp\s+(-?\d+)/);if(cp)request.score={type:"cp",value:Number(cp[1])};
+      const mate=clean.match(/\bscore\s+mate\s+(-?\d+)/);if(mate)request.score={type:"mate",value:Number(mate[1])};
+      const bestmove=clean.match(/(?:^|\s)bestmove\s+(\S+)/);
+      if(bestmove){const best=bestmove[1]||null;clearTimeout(request.timeout);this.pending=null;this.emit("ready");request.resolve({bestmove:best,depth:request.depth||0,score:request.score});}
     }
     analyze(fen,options={}){
       const run=async()=>{

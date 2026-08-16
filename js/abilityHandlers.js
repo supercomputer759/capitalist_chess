@@ -2,14 +2,56 @@
   "use strict";
   const abilityHandlers={
     move_income(ctx){if(ctx.event==="turn"&&ctx.owner&&Number(ctx.params.amount))ctx.owner.money+=Number(ctx.params.amount);},
-    deposit_interest_bonus(){/* TODO: 예금 만기 계산과 연결할 수 있을 때 적용 */},
-    black_hole_pulse(){/* TODO: 범위 효과는 capture-the-king 방어 규칙 확정 후 연결 */},
+    deposit_interest_bonus(){},
+    black_hole_pulse(){},
     guard_check_warning(){/* 체크는 시각 경고만 제공 */},
-    fortress_capture_guard(){/* TODO: 포획 방어 충전량을 전투 규칙에 연결 */},
+    fortress_capture_guard(){},
     fake_king_reveal(ctx){return Number(ctx.params.captureApPenalty)||0;},
     fake_king_identity(){/* 포획 시 game.js가 JSON params로 정체 공개와 AP 차감을 처리 */},
     royal_unit(){/* countsAsKing은 game.js가 JSON params로 판정 */}
+    ,dismount_escape(ctx){
+      if(ctx.event!=="capture"||!ctx.captureSquare)return null;
+      const charges=Number(ctx.piece.abilityCharges?.dismount_escape??ctx.params.charges??0);
+      if(charges<=0)return null;
+      const {r,c}=ctx.captureSquare,radius=Math.max(1,Number(ctx.params.escapeRadius)||1);
+      for(let dr=-radius;dr<=radius;dr++)for(let dc=-radius;dc<=radius;dc++){
+        if(!dr&&!dc)continue;
+        const rr=r+dr,cc=c+dc;
+        if(rr>=0&&rr<8&&cc>=0&&cc<8&&!ctx.state.board[rr][cc]){
+          ctx.piece.abilityCharges={...(ctx.piece.abilityCharges||{}),dismount_escape:charges-1};
+          return {escapeSquare:{r:rr,c:cc}};
+        }
+      }
+      return null;
+    }
   };
+  const inside=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
+  const distance=(a,b)=>Math.max(Math.abs(a.r-b.r),Math.abs(a.c-b.c));
+  const locate=(state,piece)=>{for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(state.board[r][c]===piece)return {r,c};return null;};
+  Object.assign(abilityHandlers,{
+    black_hole_pulse(ctx){
+      if(ctx.event!=="turn")return null;
+      const pos=locate(ctx.state,ctx.piece),radius=Math.max(0,Number(ctx.params.radius)||0),interval=Math.max(1,Number(ctx.params.intervalTurns)||1);
+      if(!pos||ctx.state.turnNo%interval)return null;
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){const target=ctx.state.board[r][c];if(!target||target===ctx.piece||distance(pos,{r,c})>radius)continue;if(!ctx.params.affectsFriendly&&target.color===ctx.piece.color)continue;if(!ctx.params.affectsKing&&target.type==="k")continue;ctx.state.board[r][c]=null;}
+      return null;
+    },
+    deposit_interest_bonus(ctx){if(ctx.event==="turn"&&ctx.owner)ctx.owner.interestMultiplier=Number(ctx.params.multiplier)||1;},
+    ally_defense_aura(ctx){if(ctx.event==="capture"&&ctx.captureSquare&&ctx.piece?.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true};}return null;},
+    bonus_move_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color)return {extraMove:true};return null;},
+    capture_or_convert(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color&&Math.random()<=Number(ctx.params.convertChance||0))return {convert:true};return null;},
+    cash_steal_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color)return {stealFraction:Number(ctx.params.fractionOfVictimValue)||0,maxSteal:Number(ctx.params.maxSteal)||0};return null;},
+    explode_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color)return {explode:true};return null;},
+    fortress_capture_guard(ctx){if(ctx.event==="capture"&&ctx.captureSquare&&ctx.piece?.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true};}return null;},
+    ranged_capture(){return null;},
+    sacrifice_for_king(ctx){if(ctx.event==="capture"&&ctx.captured&&ctx.captured.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true,sacrifice:true};}return null;},
+    produce_pawn(ctx){if(ctx.event!=="turn")return null;const pos=locate(ctx.state,ctx.piece),interval=Math.max(1,Number(ctx.params.intervalTurns)||1);if(!pos||ctx.state.turnNo%interval)return null;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const r=pos.r+dr,c=pos.c+dc;if(inside(r,c)&&!ctx.state.board[r][c]){ctx.state.board[r][c]={type:"p",color:ctx.piece.color,moved:false,id:crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)};return null;}}return null;},
+    venture_roll(ctx){if(ctx.event==="turn"&&ctx.piece){let n=Math.random(),sum=0;for(const outcome of ctx.params.outcomes||[]){sum+=Number(outcome.weight)||0;if(n<=sum){ctx.piece.ventureMovement=outcome.movement;ctx.piece.ventureScore=outcome.score;break;}}}return null;},
+    hostile_takeover(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color)return {takeover:true,premiumFraction:Number(ctx.params.premiumFraction)||0};return null;},
+    magnet_pull_on_move(ctx){if(ctx.event==="move")return {magnet:true};return null;},
+    paid_friendly_swap(ctx){if(ctx.event==="action")return {moneyCost:Number(ctx.params.moneyCost)||0,apCost:Number(ctx.params.apCost)||0};return null;},
+    disable_enemy_specials_aura(ctx){if(ctx.event==="turn"&&ctx.piece){const pos=locate(ctx.state,ctx.piece);ctx.piece.disableAura=pos?Number(ctx.params.radius)||0:0;}return null;}
+  });
   window.abilityHandlers=abilityHandlers;
   window.runAbility=(id,ctx)=>{const handler=abilityHandlers[id];if(!handler){console.warn(`알 수 없는 특수능력: ${id}`);return undefined;}try{return handler(ctx);}catch(error){console.warn(`특수능력 실행 실패: ${id}`,error);return undefined;}};
 })();
