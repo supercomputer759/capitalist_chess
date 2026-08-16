@@ -131,6 +131,7 @@ const state = {
   properties:{},
   lastMove:null,
   gameOver:false,
+  gameResult:null,
   engineReady:false,
   engine:null,
   engineQueue:[],
@@ -227,6 +228,7 @@ function serializeGameState(){
     properties:state.properties,
     lastMove:state.lastMove,
     gameOver:state.gameOver,
+    gameResult:state.gameResult,
     specialStock:state.specialStock,
     specialRestockTurn:state.specialRestockTurn,
     clock:state.clock,
@@ -239,8 +241,8 @@ function applyGameState(snapshot){
   if(!snapshot||snapshot.schemaVersion!==1)return false;
   state.board=snapshot.board||state.board;state.turn=snapshot.turn||state.turn;state.turnNo=Number(snapshot.turnNo||state.turnNo);
   state.players=snapshot.players||state.players;state.visits=snapshot.visits||{};state.properties=snapshot.properties||{};state.lastMove=snapshot.lastMove||null;
-  state.gameOver=Boolean(snapshot.gameOver);state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
-  state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();return true;
+  const wasGameOver=state.gameOver;state.gameOver=Boolean(snapshot.gameOver);state.gameResult=snapshot.gameResult||null;state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
+  state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();if(state.gameOver&&!wasGameOver&&state.gameResult)showGameResult();return true;
 }
 window.serializeGameState=serializeGameState;window.applyGameState=applyGameState;
 function multiplayerOwnsColor(color){
@@ -252,7 +254,9 @@ function multiplayerOwnsColor(color){
 function multiplayerOwnsSquare(square){return Boolean(square&&multiplayerOwnsColor(state.board[square.r]?.[square.c]?.color));}
 function rejectRemoteTurn(){log("상대 턴에는 행동할 수 없어.","bad");render();}
 window.handleMultiplayerAction=function(action){
-  if(window.multiplayer?.role!=="host"||!action||state.turn!=="b")return;
+  if(window.multiplayer?.role!=="host"||!action)return;
+  if(action.type==="resign")return finishGame("w","흑 기권");
+  if(state.turn!=="b")return;
   if(action.type==="endTurn")return endTurn();
   if(action.type==="draw")return requestDraw();
   if(action.type==="purchase"){
@@ -423,11 +427,17 @@ function piecePrice(p){return Number(pieceDef(p)?.price||0);}
 function pieceCaptureReward(p){return Number(pieceDef(p)?.captureReward??pieceDef(p)?.price??0);}
 function pieceScore(p){return p.specialId?specialScore(pieceDef(p)):Number(pieceDef(p)?.score||0);}
 function isKingLike(p){const def=p?.specialId?specialDef(p.specialId):null;return p?.type==="k"||Boolean(p?.specialId&&!isFakeKingDef(def)&&isCountsAsKingDef(def));}
-function pieceVisual(p){
+function legacyPieceVisual(p){
   const def=pieceDef(p);
-  if(p.specialId&&!isFakeKingDef(def)&&!isCountsAsKingDef(def))return `<span class="special-piece-icon" title="${pieceName(p)}">${specialIcon(def)}</span>`;
+  if(p.specialId&&!isFakeKingDef(def)&&!isCountsAsKingDef(def))return `<span class="special-piece-icon owner-${p.color}" title="${pieceName(p)} · ${p.color==="w"?"백":"흑"}">${specialIcon(def)}<em>${p.color==="w"?"W":"B"}</em></span>`;
   const ownerView=p.specialId&&isFakeKingDef(def)&&p.color===state.turn;
   return pieceImgTag(p.color+"k","piece",ownerView?"가짜 킹":`${p.color}k`);
+}
+function pieceVisual(p){
+  const def=pieceDef(p),owner=p.color==="w"?"백":"흑";
+  if(p.specialId&&!isFakeKingDef(def)&&!isCountsAsKingDef(def))return `<span class="special-piece-icon owner-${p.color}" title="${pieceName(p)} · ${owner}">${specialIcon(def)}<em>${p.color==="w"?"W":"B"}</em></span>`;
+  const ownerView=p.specialId&&isFakeKingDef(def)&&p.color===state.turn;
+  return `<span class="special-piece-icon owner-${p.color}" title="${pieceName(p)} · ${owner}">${pieceImgTag(p.color+"k","piece",ownerView?"가짜 킹":`${p.color}k`)}<em>${p.color==="w"?"W":"B"}</em></span>`;
 }
 function current(){ return state.players[state.turn]; }
 function enemyColor(c=state.turn){ return c === "w" ? "b" : "w"; }
@@ -439,6 +449,10 @@ function cloneBoard(board=state.board){ return board.map(row=>row.map(p=>p?{...p
 function countTax(color){
   let n=0;
   for(const row of state.board) for(const p of row) if(p?.color===color) n+=p.specialId?specialTax(pieceDef(p)):Number(PIECES[p.type]?.tax||0);
+  for(const row of state.board) for(const p of row) if(p?.color===color&&p.specialId&&p.active){
+    const ability=specialAbility(specialDef(p.specialId),"piece_tax_discount");
+    if(ability)n=Math.max(0,Math.round(n*(1-Number(ability.params?.fraction||0))));
+  }
   return n;
 }
 function countPieceScore(color){
@@ -682,6 +696,8 @@ function bindControls(){
   document.getElementById("stockBuyBtn").onclick=runMultiplayerAction("stockBuy",()=>tradeStock(true),()=>({key:document.getElementById("stockSelect")?.value,qty:document.getElementById("stockQty")?.value}));
   document.getElementById("stockSellBtn").onclick=runMultiplayerAction("stockSell",()=>tradeStock(false),()=>({key:document.getElementById("stockSelect")?.value,qty:document.getElementById("stockQty")?.value}));
   document.getElementById("drawBtn").onclick=runMultiplayerAction("draw",requestDraw);
+  document.getElementById("resignBtn")?.addEventListener("click",()=>{if(confirm("정말 기권할까?"))resignGame();});
+  document.getElementById("closeRoomBtn")?.addEventListener("click",()=>{if(confirm("방을 종료하면 상대도 방에서 나가게 돼. 계속할까?"))window.multiplayer?.closeRoom();});
   ["cancelModeBtn","clearLogBtn","salaryBtn","depositBtn","ventureBtn","promoteBtn","teleportBtn","insuranceBtn","sellPieceBtn","stockBuyBtn","stockSellBtn"].forEach(id=>{
     document.getElementById(id)?.addEventListener("click",()=>playSound("click"));
   });
@@ -700,7 +716,7 @@ function showBoardPieceInfo(r,c){
   const def=p.specialId?specialDef(p.specialId):normalPieceInfo(p);
   const viewerOwns=p.color===state.turn;
   const hiddenFakeId=p.specialId&&isFakeKingDef(def)&&!viewerOwns;
-  showPieceInfo(def,p.specialId?state.specialStock[p.specialId]||0:null,viewerOwns,p.id,hiddenFakeId?null:(p.specialId||p.type));
+  showPieceInfo(def,p.specialId?state.specialStock[p.specialId]||0:null,viewerOwns,p.id,hiddenFakeId?null:(p.specialId||p.type),p.color);
 }
 
 function clickSquare(r,c){
@@ -813,7 +829,7 @@ function pseudoMoves(r,c,board=state.board, attackOnly=false){
   if(p.attackLockedTurns>0&&attackOnly)return [];
   if(specialDisabledAt(r,c,p,board))return [];
   if(p.specialId){
-    const def=specialDef(p.specialId),ranged=specialAbility(def,"ranged_capture"),movement=ranged?{type:"ranged_capture",...ranged.params}:def?.movement,handler=window.movementHandlers?.[movement?.type];
+    const def=specialDef(p.specialId),ranged=specialAbility(def,"ranged_capture"),movement=p.growMovement||p.ventureMovement||(ranged?{type:"ranged_capture",...ranged.params}:def?.movement),handler=window.movementHandlers?.[movement?.type];
     return handler?handler({r,c,board,p,attackOnly,movement}):[];
   }
   const out=[]; const add=(rr,cc)=>{ if(inBounds(rr,cc)) out.push({r:rr,c:cc}); };
@@ -894,6 +910,15 @@ function tryNearbyCaptureDefense(captured,captureSquare,beforeBoard){
   }
   return false;
 }
+function runCapturedAbilityEffects(captured,captureSquare){
+  const effects=[];
+  if(!captured?.specialId)return effects;
+  for(const ability of specialAbilities(specialDef(captured.specialId))){
+    const result=runAbility(ability.id,{state,piece:captured,owner:state.players[captured.color],captured,params:ability.params||{},event:"capture",captureSquare,beforeBoard:null});
+    if(result)effects.push(result);
+  }
+  return effects;
+}
 function runCaptureAbilityEffects(moving,captured,captureSquare){
   const effects=[];
   for(const ability of specialAbilities(specialDef(moving?.specialId))){
@@ -901,6 +926,26 @@ function runCaptureAbilityEffects(moving,captured,captureSquare){
     if(result)effects.push(result);
   }
   return effects;
+}
+function runMoveAbilityEffects(moving,from,to){
+  const effects=[];
+  for(const ability of specialAbilities(specialDef(moving?.specialId))){
+    const result=runAbility(ability.id,{state,piece:moving,owner:state.players[moving.color],params:ability.params||{},event:"move",from,to});
+    if(result)effects.push({...result,params:ability.params||{}});
+  }
+  return effects;
+}
+function applyMoveAbilityEffects(effects,to,moving){
+  for(const effect of effects){
+    if(!effect.magnet)continue;
+    const sourceRadius=Math.max(1,Number(effect.params.sourceRadius)||1),destinationRadius=Math.max(1,Number(effect.params.destinationRadius)||1),candidates=[];
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++){const target=state.board[r][c];if(target&&target.color!==moving.color&&Math.max(Math.abs(r-to.r),Math.abs(c-to.c))<=sourceRadius)candidates.push({r,c});}
+    if(!candidates.length)continue;
+    const target=effect.params.randomTarget?candidates[Math.floor(Math.random()*candidates.length)]:candidates[0];
+    for(let dr=-destinationRadius;dr<=destinationRadius;dr++)for(let dc=-destinationRadius;dc<=destinationRadius;dc++){
+      const r=to.r+dr,c=to.c+dc;if(inBounds(r,c)&&!state.board[r][c]){state.board[r][c]=state.board[target.r][target.c];state.board[target.r][target.c]=null;log(`${pieceName(moving)}의 자석 효과가 상대 기물을 끌어왔어.` ,"gold");dr=destinationRadius+1;break;}
+    }
+  }
 }
 function makeMove(fr,fc,tr,tc){
   const pl=current(); if(pl.moveUsed) return log("일반 체스 이동은 턴당 1번이야.","bad");
@@ -916,6 +961,8 @@ function makeMove(fr,fc,tr,tc){
   const beforeBoard=cloneBoard();
   const uci=sqName(fr,fc)+sqName(tr,tc)+(moving.type==="p" && (tr===0||tr===7)?"q":"");
   state.board[tr][tc]={...moving,moved:true}; state.board[fr][fc]=null;
+  const moveEffects=runMoveAbilityEffects(moving,{r:fr,c:fc},{r:tr,c:tc});
+  applyMoveAbilityEffects(moveEffects,{r:tr,c:tc},moving);
   pl.ap--; pl.moveUsed=true;
   if(isKingInCheck(enemyColor(),state.board))playSound("check");
   const revision=++state.engineRevision,moveId=++state.engineMoveSerial;
@@ -924,6 +971,9 @@ function makeMove(fr,fc,tr,tc){
     if(tryNearbyCaptureDefense(captured,{r:tr,c:tc},beforeBoard)||tryCaptureDefense(captured,{r:tr,c:tc},beforeBoard)){
       state.selected={r:fr,c:fc};state.legalTargets=[];render();return;
     }
+    const capturedEffects=runCapturedAbilityEffects(captured,{r:tr,c:tc});
+    const depositLoss=capturedEffects.find(effect=>effect.depositLossFraction);
+    if(depositLoss){const owner=state.players[captured.color];owner.deposits=owner.deposits.map(d=>({...d,principal:Math.max(0,Math.round(d.principal*(1-depositLoss.depositLossFraction)))}));}
     const stolen=captureEffects.find(effect=>effect.stealFraction);
     if(stolen){const amount=Math.min(stolen.maxSteal,Math.max(0,Math.round(piecePrice(captured)*stolen.stealFraction)));state.players[captured.color].money-=amount;pl.money+=amount;log(`${pieceName(moving)} 현금 강탈 +${fmt(amount)}`,"good");}
     if(captureEffects.some(effect=>effect.explode)){
@@ -939,7 +989,9 @@ function makeMove(fr,fc,tr,tc){
     const takeover=captureEffects.find(effect=>effect.takeover);
     if(takeover){const key=sqName(tr,tc),premium=Math.round(piecePrice(captured)*takeover.premiumFraction);state.properties[key]=moving.color;pl.money-=premium;log(`${key} 적대적 인수 · 프리미엄 -${fmt(premium)}`,"gold");}
     if(captureEffects.some(effect=>effect.extraMove))pl.moveUsed=false;
-    const reward=pieceCaptureReward(captured);
+    let reward=pieceCaptureReward(captured);
+    const captureBonus=captureEffects.find(effect=>effect.captureBonusFraction);
+    if(captureBonus)reward+=Math.round(reward*captureBonus.captureBonusFraction);
     if(captured.type==="k"&&state.players[captured.color].insurance){
       state.players[captured.color].insurance=false;
       state.board[fr][fc]=moving;state.board[tr][tc]=captured;pl.money-=reward;
@@ -974,7 +1026,16 @@ function visitSquare(r,c,color){
   const key=sqName(r,c); state.visits[key]=(state.visits[key]||0)+1;
   const owner=state.properties[key];
   if(owner && owner!==color){
-    const toll=propertyToll(key);
+    let toll=propertyToll(key),multiplier=1;
+    const square={r,c};
+    for(let rr=0;rr<8;rr++)for(let cc=0;cc<8;cc++){
+      const p=state.board[rr][cc];if(!p?.specialId||p.color!==owner||!p.active)continue;
+      for(const ability of specialAbilities(specialDef(p.specialId))){
+        const effect=runAbility(ability.id,{state,piece:p,owner:state.players[owner],params:ability.params||{},event:"toll",captureSquare:square});
+        if(effect?.tollMultiplier)multiplier=Math.max(multiplier,effect.tollMultiplier);
+      }
+    }
+    toll=Math.round(toll*multiplier);
     const payer=state.players[color], receiver=state.players[owner];
     payer.money-=toll; receiver.money+=toll;
     log(`${key} 통행료: ${color==="w"?"백":"흑"} -${fmt(toll)} → ${owner==="w"?"백":"흑"}`,"bad");
@@ -1016,8 +1077,24 @@ function makeVenture(){
 }
 function processMaturities(color){
   const p=state.players[color];
-  p.deposits=p.deposits.filter(d=>{if(d.due<=p.ownTurns){const ret=Math.round(d.principal*1.12);p.money+=ret;log(`${color==="w"?"백":"흑"} 적금 만기 +${fmt(ret)}`,"good");return false;}return true;});
+  const interestMultiplier=Number(p.interestMultiplier||1);
+  p.deposits=p.deposits.filter(d=>{if(d.due<=p.ownTurns){const ret=Math.round(d.principal*(1.12*interestMultiplier));p.money+=ret;log(`${color==="w"?"백":"흑"} 적금 만기 +${fmt(ret)}`,"good");return false;}return true;});
   p.ventures=p.ventures.filter(v=>{if(v.due<=p.ownTurns){const ret=Math.round(v.principal*v.mult);p.money+=ret;log(`${color==="w"?"백":"흑"} 벤처 회수 ${fmt(ret)} (${v.mult}×)`,ret>=v.principal?"good":"bad");return false;}return true;});
+}
+function escortKingAuraPieces(color){
+  const king=findKing(color);if(!king)return;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const guard=state.board[r][c],def=guard?.specialId?specialDef(guard.specialId):null,movement=def?.movement;
+    if(!guard||guard.color!==color||!guard.specialId||movement?.type!=="king_aura_teleport")continue;
+    const radius=Math.max(1,Number(movement.radiusFromKing)||1);
+    if(Math.max(Math.abs(r-king.r),Math.abs(c-king.c))<=radius)continue;
+    let destination=null;
+    for(let dr=-radius;dr<=radius&&!destination;dr++)for(let dc=-radius;dc<=radius;dc++){
+      const rr=king.r+dr,cc=king.c+dc;
+      if(inBounds(rr,cc)&&!state.board[rr][cc]&&Math.max(Math.abs(dr),Math.abs(dc))<=radius)destination={r:rr,c:cc};
+    }
+    if(destination){state.board[destination.r][destination.c]={...guard,moved:true};state.board[r][c]=null;log(`${def.name}이 킹 곁으로 이동했어.` ,"gold");}
+  }
 }
 function runTurnAbilities(color){
   for(const row of state.board)for(const p of row)if(p?.color===color&&p.purchaseLocked&&!p.active&&p.activationTurn<=state.turnNo){
@@ -1032,8 +1109,17 @@ function runTurnAbilities(color){
     const def=specialDef(p.specialId);
     if(!p.active&&p.activationTurn<=state.turnNo){p.active=true;log(`${def?.name||"특수기물"} 활성화.`,`gold`);}
     if(!p.active)continue;
-    for(const ability of specialAbilities(def))runAbility(ability.id,{state,owner:state.players[color],piece:p,params:ability.params||{},event:"turn"});
+    p.specialTurnCount=Number(p.specialTurnCount||0)+1;
+    for(const ability of specialAbilities(def)){
+      const result=runAbility(ability.id,{state,owner:state.players[color],piece:p,params:ability.params||{},event:"turn"});
+      if(result?.blackHolePulse){
+        log(`${def?.name||"블랙홀"} 펄스 발동 · ${result.removed}개 기물 제거` ,"bad");
+        if(!findKing(color))finishGame(enemyColor(color),`${color==="w"?"백":"흑"} 킹이 블랙홀에 휩쓸렸어`);
+        else if(!findKing(enemyColor(color)))finishGame(color,"상대 킹이 블랙홀에 휩쓸렸어");
+      }
+    }
   }
+  escortKingAuraPieces(color);
 }
 
 function instantPromote(){
@@ -1126,16 +1212,32 @@ function endTurn(timedOut=false){
   state.turn=next;state.turnNo++;
   const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;playSound("select");
   p.money+=p.salary;const tax=countTax(state.turn);p.money-=tax;
+  if(p.money<0){
+    for(const row of state.board)for(const unit of row)if(unit?.color===state.turn&&unit.specialId){
+      const ability=specialAbility(specialDef(unit.specialId),"defect_on_unpaid_tax");
+      if(ability&&ability.params?.toOpponent){unit.color=enemyColor(state.turn);log(`${specialDef(unit.specialId)?.name||"특수기물"}이 세금 미납으로 상대 진영에 넘어갔어.` ,"bad");}
+    }
+  }
   log(`${state.turn==="w"?"백":"흑"} 턴 시작: 월급 +${fmt(p.salary)}, 세금 -${fmt(tax)}`,tax?"":"good");
-  processMaturities(state.turn);runTurnAbilities(state.turn);moveMarket();
+  processMaturities(state.turn);runTurnAbilities(state.turn);if(state.gameOver){render();return;}moveMarket();
   if(SpecialPieces.data&&state.turnNo%Number(SpecialPieces.data.restockEveryTurns||3)===0)restockSpecialPieces();
   clearMode();startTurnTimer();render();
 }
+function resignGame(){
+  if(state.gameOver)return;
+  if(window.multiplayer?.role==="guest")return window.multiplayer.resign();
+  if(window.multiplayer?.role==="host")return finishGame("b","백 기권");
+  finishGame(enemyColor(state.turn),`${state.turn==="w"?"백":"흑"} 기권`);
+}
 function finishGame(winner,reason){
   stopTurnTimer();
-  state.gameOver=true;const name=winner==="w"?"백":"흑";
-  document.getElementById("gameOverTitle").textContent=`${name} 승리`;
-  document.getElementById("gameOverText").textContent=`${reason}\n최종 자산 — 백 ${fmt(state.players.w.money)} / 흑 ${fmt(state.players.b.money)}`;
+  state.gameOver=true;state.gameResult={winner,reason};showGameResult();render();
+}
+function showGameResult(){
+  const result=state.gameResult||{winner:null,reason:"게임 종료"};
+  const name=result.winner==="w"?"백":result.winner==="b"?"흑":null;
+  document.getElementById("gameOverTitle").textContent=name?`${name} 승리`:`무승부`;
+  document.getElementById("gameOverText").textContent=`${result.reason||"게임 종료"}\n최종 자산 — 백 ${fmt(state.players.w.money)} / 흑 ${fmt(state.players.b.money)}`;
   document.getElementById("gameOverModal").classList.remove("hidden");
 }
 function checkBankruptcy(){
@@ -1162,7 +1264,10 @@ function startTurnTimer(){
     if(state.gameOver) return stopTurnTimer();
     state.clock[state.turn]=Math.max(0,state.clock[state.turn]-1);
     renderTurnTimer();
-    if(state.clock[state.turn]<=0)endTurn(true);
+    if(state.clock[state.turn]<=0){
+      if(window.multiplayer?.role!=="guest")finishGame(enemyColor(state.turn),`${state.turn==="w"?"백":"흑"} 시간 초과`);
+      else stopTurnTimer();
+    }
   },1000);
 }
 function stopTurnTimer(){
@@ -1187,9 +1292,10 @@ function requestDraw(){
 function finishDraw(){
   stopTurnTimer();
   state.gameOver=true;
+  state.gameResult={winner:null,reason:"백과 흑이 무승부에 합의했습니다."};
   document.getElementById("gameOverTitle").textContent="무승부";
-  document.getElementById("gameOverText").textContent=`백과 흑이 무승부에 합의했습니다.\n최종 자산 — 백 ${fmt(state.players.w.money)} / 흑 ${fmt(state.players.b.money)}`;
-  document.getElementById("gameOverModal").classList.remove("hidden");
+  document.getElementById("gameOverText").textContent=`${state.gameResult.reason}\n최종 자산 — 백 ${fmt(state.players.w.money)} / 흑 ${fmt(state.players.b.money)}`;
+  document.getElementById("gameOverModal").classList.remove("hidden");render();
 }
 
 function fenFor(side){
@@ -1456,7 +1562,7 @@ function render(){
   document.getElementById("apValue").textContent=`${p.ap} / ${CFG.maxAP}`;
   document.getElementById("moveState").textContent=`체스 수: ${p.moveUsed?"사용 완료":"사용 가능"}`;
   document.getElementById("selectedSquare").textContent=state.selected?sqName(state.selected.r,state.selected.c):"없음";
-  document.getElementById("salaryUpgradeText").textContent=`+${fmt(CFG.salaryRaise)}/턴 · 비용 ${fmt(salaryCost(p))} · 1 AP`;
+  document.getElementById("salaryUpgradeText").textContent=`현재 ${fmt(p.salary)}/턴 · 인상 후 ${fmt(p.salary+CFG.salaryRaise)}/턴 · 비용 ${fmt(salaryCost(p))} · 1 AP`;
   document.getElementById("insuranceStatus").innerHTML=`백 보험: ${w.insurance?"<strong>보유</strong>":"없음"} · 흑 보험: ${b.insurance?"<strong>보유</strong>":"없음"}`;
   const drawBtn=document.getElementById("drawBtn");
   if(drawBtn){

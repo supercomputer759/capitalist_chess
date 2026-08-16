@@ -18,7 +18,7 @@ function closeRoom(room){
 }
 function scheduleHostGrace(room){
   if(room.graceTimer)clearTimeout(room.graceTimer);
-  room.graceTimer=setTimeout(()=>{if(!room.host)closeRoom(room);},RECONNECT_GRACE_MS);
+  room.graceTimer=setTimeout(()=>{if(!room.host){send(room.guest,{type:"roomClosed",reason:"hostTimeout"});closeRoom(room);}},RECONNECT_GRACE_MS);
 }
 function markDisconnected(room,role,ws){
   if(role==="host"&&room.host===ws){room.host=null;room.hostDisconnectedAt=Date.now();send(room.guest,{type:"hostDisconnected",graceMs:RECONNECT_GRACE_MS});scheduleHostGrace(room);}
@@ -57,10 +57,21 @@ function handleMessage(ws,message){
   if(message.type==="leave"){
     const role=session.role;ws.explicitLeave=true;tokens.delete(ws.token);if(role==="host"){send(room.guest,{type:"hostLeft"});closeRoom(room);}else{room.guest=null;room.guestToken=null;send(room.host,{type:"guestLeft"});}return ws.close();
   }
+  if(message.type==="closeRoom"&&session.role==="host"){
+    send(room.host,{type:"roomClosed"});send(room.guest,{type:"roomClosed"});
+    if(room.host)room.host.explicitLeave=true;if(room.guest)room.guest.explicitLeave=true;
+    room.host?.close();room.guest?.close();closeRoom(room);return;
+  }
   if(message.type==="state"&&session.role==="host"){
     room.state=message.state;room.revision=Number(message.revision||room.revision);return send(room.guest,{type:"state",revision:room.revision,state:room.state});
   }
   if(message.type==="action"&&session.role==="guest")return send(room.host,{type:"action",action:message.action,token:ws.token});
+  if(message.type==="chat"){
+    const text=String(message.text||"").trim().slice(0,200);
+    if(!text)return;
+    const chat={type:"chat",from:session.role,text,at:Date.now()};
+    send(room.host,chat);send(room.guest,chat);return;
+  }
   if(message.type==="sync")return send(ws,{type:"state",revision:room.revision,state:room.state});
 }
 function setupSocket(ws){

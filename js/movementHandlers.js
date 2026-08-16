@@ -30,7 +30,8 @@
     king_aura_teleport:ctx=>movementHandlers.king(ctx),
     progressive:ctx=>movementHandlers.king(ctx),
     random_on_purchase:ctx=>movementHandlers.pawn(ctx),
-    dynamic:ctx=>movementHandlers.king(ctx)
+    dynamic:ctx=>movementHandlers.king(ctx),
+    knight_bishop:ctx=>movementHandlers.compound({...ctx,movement:{modes:["knight","bishop"]}})
     ,ranged_capture:ctx=>{
       const out=[],range=Math.max(1,Number(ctx.movement?.range)||3),dirs=vectors.queen;
       for(const [dr,dc] of dirs)for(let step=1;step<=range;step++){

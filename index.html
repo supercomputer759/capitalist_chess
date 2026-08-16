@@ -69,6 +69,14 @@
           <div class="button-row"><button id="buyPropertyBtn">선택 칸 매입</button><button id="sellPieceBtn">선택 기물 매각</button></div>
         </section>
 
+        <section class="panel chat-panel">
+          <div class="panel-head"><h2>채팅</h2><span id="chatState">방 연결 후 사용</span></div>
+          <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
+          <form class="chat-form" id="chatForm">
+            <input id="chatInput" type="text" maxlength="200" autocomplete="off" placeholder="메시지를 입력해줘" disabled />
+            <button class="primary" id="chatSendBtn" type="submit" disabled>전송</button>
+          </form>
+        </section>
         <section class="panel log-panel bottom-log">
           <div class="panel-head"><h2>거래소 / 전장 로그</h2><button class="ghost" id="clearLogBtn">지우기</button></div>
           <div class="log" id="log"></div>
@@ -124,6 +132,7 @@
       <div class="multiplayer-actions"><button class="primary" id="createRoomBtn" type="button">방 만들기</button><input id="roomCodeInput" maxlength="6" placeholder="방 코드" autocomplete="off"><button class="ghost" id="joinRoomBtn" type="button">입장</button></div>
       <div class="room-code-box">방 코드 <strong id="roomCodeValue">-</strong><button class="ghost" id="copyRoomCodeBtn" type="button">복사</button></div>
       <div class="muted" id="multiplayerRole">로컬 게임</div>
+      <div class="multiplayer-room-controls"><button class="ghost" id="resignBtn" type="button" disabled>기권</button><button class="ghost danger-button" id="closeRoomBtn" type="button" disabled>방 종료</button></div>
     </div>
   </div>
   <div class="move-grade-overlay" id="moveGradeOverlay" aria-live="polite" aria-hidden="true"></div>
