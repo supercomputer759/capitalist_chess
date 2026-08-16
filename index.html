@@ -21,20 +21,24 @@
 
     <div class="players-row fixed-status">
       <article class="player-card" id="whiteCard">
+        <div class="player-clock" id="whiteClock">15:00</div>
         <div class="player-title"><span class="side-dot white"></span>백</div>
         <div class="money" id="whiteMoney">$0</div>
-        <div class="stats"><span>월급 <b id="whiteSalary">$0</b></span><span>다음 세금 <b id="whiteTax">$0</b></span></div>
+        <div class="stats"><span>월급 <b id="whiteSalary">$0</b></span><span>세금 <b id="whiteTax">$0</b></span><span>기물 <b id="whitePieceScore">0점</b></span></div>
       </article>
       <article class="turn-card">
         <div class="turn-label" id="turnLabel">백의 턴</div>
         <div class="ap"><span>행동력</span><strong id="apValue">3 / 3</strong></div>
         <div class="move-state" id="moveState">체스 수: 사용 가능</div>
+        <div class="turn-timer">체스 시계 <strong id="turnTimer">15:00</strong></div>
         <button class="primary" id="endTurnBtn">턴 종료</button>
+        <button class="ghost" id="drawBtn">무승부 요청</button>
       </article>
       <article class="player-card" id="blackCard">
+        <div class="player-clock" id="blackClock">15:00</div>
         <div class="player-title"><span class="side-dot black"></span>흑</div>
         <div class="money" id="blackMoney">$0</div>
-        <div class="stats"><span>월급 <b id="blackSalary">$0</b></span><span>다음 세금 <b id="blackTax">$0</b></span></div>
+        <div class="stats"><span>월급 <b id="blackSalary">$0</b></span><span>세금 <b id="blackTax">$0</b></span><span>기물 <b id="blackPieceScore">0점</b></span></div>
       </article>
     </div>
 
@@ -45,7 +49,7 @@
             <div class="rank-labels" id="rankLabels"></div>
             <div class="board" id="board" aria-label="체스판"></div>
             <svg class="board-annotations" id="boardAnnotations" viewBox="0 0 800 800" preserveAspectRatio="none" aria-hidden="true">
-              <defs><marker id="arrowHead" markerWidth="12" markerHeight="12" refX="10" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z"></path></marker></defs>
+              <defs><marker id="arrowHead" markerWidth="24" markerHeight="24" refX="20" refY="10" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L20,10 L0,20 z"></path></marker></defs>
               <g id="annotationLayer"></g>
             </svg>
             <div class="file-labels" id="fileLabels"></div>
@@ -70,11 +74,14 @@
           <div class="panel-head"><h2>기물 상점</h2><span>구매 1 AP</span></div>
           <p class="hint">구매 버튼 → 자기 진영(백 1~2랭크 / 흑 7~8랭크)의 빈 칸 클릭.</p>
           <div class="piece-shop" id="pieceShop"></div><button class="ghost wide" id="cancelModeBtn">선택/모드 취소</button>
+          <h3 class="special-shop-title">특수기물 시장</h3>
+          <div class="special-piece-shop" id="specialPieceShop"></div>
+          <div class="special-stock-status" id="specialLoadStatus">특수기물 데이터 불러오는 중…</div>
         </section>
         <section class="panel economy-panel"><div class="panel-head"><h2>노동 · 현금흐름</h2><span>돈은 킹보다 오래 산다</span></div><div class="econ-grid"><button id="jobBtn"><b>알바</b><small>+ $100 · 1 AP</small></button><button id="salaryBtn"><b>월급 인상</b><small id="salaryUpgradeText">비용 계산 중</small></button><button id="depositBtn"><b>적금 $500</b><small>4회 내 턴 뒤 +12%</small></button><button id="ventureBtn"><b>벤처 투자 $300</b><small>3회 내 턴 뒤 0.35~2.2×</small></button></div><div class="maturity" id="maturityList"></div></section>
         <section class="panel special-panel"><div class="panel-head"><h2>특수 행동</h2><span>여기서부터 체스가 아님</span></div><div class="econ-grid"><button id="promoteBtn"><b>즉시 승급</b><small>선택 폰 → 퀸 · $600 · 1 AP</small></button><button id="teleportBtn"><b>즉시이동</b><small>선택 기물 → 빈 칸 · $800 · 2 AP</small></button><button id="insuranceBtn"><b>킹 부활 보험</b><small>$1,200 · 1 AP · 1회</small></button></div><div class="insurance-status" id="insuranceStatus"></div></section>
         <section class="panel stocks-panel"><div class="panel-head"><h2>증권시장</h2><span id="marketTurn">시장 개장</span></div><div class="ticker" id="ticker"></div><div class="stock-controls"><select id="stockSelect"></select><input id="stockQty" type="number" min="1" max="99" value="1" /><button id="stockBuyBtn">매수</button><button id="stockSellBtn">매도</button></div><div class="portfolio" id="portfolio"></div><div class="news"><h3>뉴스</h3><div id="newsFeed"></div></div></section>
-        <section class="panel rules-panel"><div class="panel-head"><h2>현재 프로토타입 룰</h2></div><ul><li>양측은 킹 1개와 초기자금으로 시작.</li><li>턴당 AP 3. 일반 체스 이동은 턴당 1회.</li><li>상대 기물을 잡으면 그 기물 가격만큼 즉시 현금 획득.</li><li>턴 시작 때 월급 지급 + 기물 수에 따른 세금 납부.</li><li>밟은 칸은 방문횟수가 쌓이고, 매입한 칸은 상대가 밟을 때 통행료 발생.</li><li>체크 상태에서는 경제 행동 금지. 먼저 정상 체스 수로 체크를 풀어야 함.</li><li>Stockfish 엔진이 있으면 일반 체스 이동 중 엔진 최선수에 보너스 지급.</li></ul></section>
+        <section class="panel rules-panel"><div class="panel-head"><h2>현재 프로토타입 룰</h2></div><ul><li>양측은 킹 1개와 초기자금으로 시작.</li><li>턴당 AP 3. 일반 체스 이동은 턴당 1회.</li><li>특수기물은 자기 진영에만 배치되며 구매 턴에는 비활성.</li><li>특수기물은 다음 자기 턴 시작에 활성화되고, 설치형은 배치된 채 능력만 대기.</li><li>상대 기물을 잡으면 그 기물 가격만큼 즉시 현금 획득.</li><li>턴 시작 때 월급 + 기물 유지세 납부.</li><li>체크는 위험 시각효과일 뿐이며, 체크 상태에서도 턴 종료 가능.</li><li>승리는 상대 킹을 실제로 포획할 때만 발생.</li></ul></section>
       </aside>
     </main>
 
@@ -92,6 +99,19 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="pieceInfoModal" role="dialog" aria-modal="true" aria-label="기물 상세정보">
+    <div class="modal-card piece-info-card" id="pieceInfoCard">
+      <button class="piece-info-close ghost" id="pieceInfoClose" aria-label="닫기">×</button>
+      <div id="pieceInfoBody"></div>
+    </div>
+  </div>
+
+  <script src="js/movementHandlers.js"></script>
+  <script src="js/abilityHandlers.js"></script>
+  <script src="js/specialPieces.js"></script>
+  <script src="js/pieceInfo.js"></script>
+  <script src="js/stockfishPositionAdapter.js"></script>
+  <script src="js/stockfishEngine.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

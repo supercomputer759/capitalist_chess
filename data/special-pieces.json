@@ -1,0 +1,959 @@
+{
+  "$schemaVersion": 1,
+  "notes": {
+    "pieceScore": "자본주의 체스 기준 상대 가치. 가격과 1:1 대응하지 않음.",
+    "restockChance": "재입고 갱신 때 재고가 생길 기본 확률.",
+    "zeroStockWeight": "0개가 뜨는 경향을 표현하는 밸런스용 값. 구현 시 restockChance와 함께 사용.",
+    "abilityIds": "실제 동작은 JS ability registry에서 구현."
+  },
+  "pieces": {
+    "mounted_king": {
+      "id": "mounted_king",
+      "name": "말 탄 킹",
+      "emoji": "🐴",
+      "pieceScore": 8.0,
+      "rarity": "legendary",
+      "price": 4200,
+      "buyAP": 3,
+      "tax": 180,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.06,
+        "zeroStockWeight": 0.92
+      },
+    "movement": {
+      "type": "compound",
+      "modes": [
+        "king",
+        "knight"
+      ]
+    },
+    "stockfish": { "equivalent": "k", "confidencePenalty": 0.16 },
+      "abilities": [
+        {
+          "id": "royal_unit",
+          "params": {
+            "countsAsKing": true
+          }
+        }
+      ],
+      "description": "킹과 나이트의 행마법을 모두 사용한다. 이 기물이 잡히면 해당 플레이어의 킹이 잡힌 것으로 처리한다.",
+      "warnings": [
+        "잡히면 즉시 패배 조건이 될 수 있음"
+      ]
+    },
+    "black_hole": {
+      "id": "black_hole",
+      "name": "블랙홀",
+      "emoji": "🕳️",
+      "pieceScore": 12.0,
+      "rarity": "mythic",
+      "price": 3800,
+      "buyAP": 3,
+      "tax": 220,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.04,
+        "zeroStockWeight": 0.95
+      },
+    "movement": {
+      "type": "king",
+      "maxDistance": 1
+    },
+    "stockfish": { "equivalent": null, "confidencePenalty": 0.3 },
+      "abilities": [
+        {
+          "id": "black_hole_pulse",
+          "params": {
+            "radius": 1,
+            "intervalTurns": 2,
+            "affectsFriendly": true,
+            "affectsKing": true,
+            "mode": "remove"
+          }
+        }
+      ],
+      "description": "한 칸씩 이동한다. 일정 턴마다 주변 8칸의 모든 기물을 빨아들여 제거한다.",
+      "warnings": [
+        "아군도 제거됨",
+        "킹도 예외 없음"
+      ]
+    },
+    "golden_pawn": {
+      "id": "golden_pawn",
+      "name": "황금 폰",
+      "emoji": "💰",
+      "pieceScore": 3.0,
+      "rarity": "rare",
+      "price": 850,
+      "buyAP": 1,
+      "tax": 35,
+      "captureReward": 700,
+      "stock": {
+        "max": 3,
+        "restockChance": 0.28,
+        "zeroStockWeight": 0.62
+      },
+    "movement": {
+      "type": "pawn"
+    },
+    "stockfish": { "equivalent": "p", "confidencePenalty": 0.08 },
+      "abilities": [
+        {
+          "id": "move_income",
+          "params": {
+            "amount": 120
+          }
+        }
+      ],
+      "description": "폰처럼 이동하며 이동할 때마다 돈을 생산한다. 잡히면 상대에게 큰 현상금을 준다."
+    },
+    "banker": {
+      "id": "banker",
+      "name": "은행원",
+      "emoji": "🏦",
+      "pieceScore": 4.5,
+      "rarity": "rare",
+      "price": 1500,
+      "buyAP": 1,
+      "tax": 70,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.22,
+        "zeroStockWeight": 0.68
+      },
+    "movement": {
+      "type": "bishop"
+    },
+    "stockfish": { "equivalent": "b", "confidencePenalty": 0.08 },
+      "abilities": [
+        {
+          "id": "deposit_interest_bonus",
+          "params": {
+            "multiplier": 1.35
+          }
+        },
+        {
+          "id": "deposit_loss_on_capture",
+          "params": {
+            "fraction": 0.15
+          }
+        }
+      ],
+      "description": "비숍처럼 이동한다. 살아 있는 동안 적금 이율을 높이고, 잡히면 예금 일부를 잃는다."
+    },
+    "tax_accountant": {
+      "id": "tax_accountant",
+      "name": "세무사",
+      "emoji": "🧾",
+      "pieceScore": 6.5,
+      "rarity": "legendary",
+      "price": 2200,
+      "buyAP": 2,
+      "tax": 90,
+      "captureReward": 1000,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.12,
+        "zeroStockWeight": 0.82
+      },
+    "movement": {
+      "type": "rook"
+    },
+    "stockfish": { "equivalent": "r", "confidencePenalty": 0.08 },
+      "abilities": [
+        {
+          "id": "piece_tax_discount",
+          "params": {
+            "fraction": 0.3
+          }
+        }
+      ],
+      "description": "룩처럼 이동한다. 보유 중 기물세를 줄인다. 잡히면 탈세조사 명목의 큰 현상금을 준다."
+    },
+    "stock_broker": {
+      "id": "stock_broker",
+      "name": "주식 브로커",
+      "emoji": "📈",
+      "pieceScore": 3.5,
+      "rarity": "rare",
+      "price": 1250,
+      "buyAP": 1,
+      "tax": 55,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.24,
+        "zeroStockWeight": 0.66
+      },
+      "movement": {
+        "type": "king",
+        "maxDistance": 1
+      },
+      "abilities": [
+        {
+          "id": "nearby_capture_bonus",
+          "params": {
+            "radius": 1,
+            "bonusFraction": 0.35
+          }
+        }
+      ],
+      "description": "킹처럼 1칸 이동한다. 근처 아군 기물이 적을 잡으면 포획 수익을 증가시킨다."
+    },
+    "factory": {
+      "id": "factory",
+      "name": "공장",
+      "emoji": "🏭",
+      "pieceScore": 7.0,
+      "rarity": "legendary",
+      "price": 2600,
+      "buyAP": 2,
+      "tax": 120,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.1,
+        "zeroStockWeight": 0.85
+      },
+    "movement": {
+      "type": "stationary"
+    },
+    "stockfish": { "equivalent": null, "confidencePenalty": 0.22 },
+      "abilities": [
+        {
+          "id": "produce_pawn",
+          "params": {
+            "intervalTurns": 3
+          }
+        },
+        {
+          "id": "capture_or_convert",
+          "params": {
+            "convertChance": 0.5
+          }
+        }
+      ],
+      "description": "움직이지 않는다. 일정 턴마다 폰을 생산하며, 적이 공격하면 50% 확률로 점령되고 나머지는 파괴된다."
+    },
+    "suicide_pawn": {
+      "id": "suicide_pawn",
+      "name": "자폭 폰",
+      "emoji": "💣",
+      "pieceScore": 4.0,
+      "rarity": "rare",
+      "price": 900,
+      "buyAP": 1,
+      "tax": 30,
+      "stock": {
+        "max": 3,
+        "restockChance": 0.25,
+        "zeroStockWeight": 0.65
+      },
+      "movement": {
+        "type": "pawn"
+      },
+      "abilities": [
+        {
+          "id": "explode_on_capture",
+          "params": {
+            "radius": 1,
+            "affectsFriendly": true,
+            "affectsKing": true
+          }
+        }
+      ],
+      "description": "폰처럼 움직인다. 잡히면 주변 8칸의 기물을 함께 날려버린다.",
+      "warnings": [
+        "킹도 폭발에 휘말릴 수 있음"
+      ]
+    },
+    "bodyguard": {
+      "id": "bodyguard",
+      "name": "경호원",
+      "emoji": "🛡️",
+      "pieceScore": 6.0,
+      "rarity": "legendary",
+      "price": 2400,
+      "buyAP": 2,
+      "tax": 95,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.11,
+        "zeroStockWeight": 0.84
+      },
+      "movement": {
+        "type": "king_aura_teleport",
+        "radiusFromKing": 1
+      },
+      "abilities": [
+        {
+          "id": "sacrifice_for_king",
+          "params": {
+            "radius": 1
+          }
+        }
+      ],
+      "description": "자기 킹 주변 8칸 사이를 순간이동한다. 킹 주변에 있을 때 킹이 잡히면 대신 희생한다."
+    },
+    "ghost": {
+      "id": "ghost",
+      "name": "유령",
+      "emoji": "👻",
+      "pieceScore": 4.0,
+      "rarity": "rare",
+      "price": 1300,
+      "buyAP": 1,
+      "tax": 50,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.22,
+        "zeroStockWeight": 0.68
+      },
+      "movement": {
+        "type": "queen",
+        "phasing": true
+      },
+      "abilities": [
+        {
+          "id": "capture_chance",
+          "params": {
+            "chance": 0.5
+          }
+        }
+      ],
+      "description": "다른 기물을 통과해 이동할 수 있지만 포획은 50% 확률로만 성공한다."
+    },
+    "magnet": {
+      "id": "magnet",
+      "name": "자석",
+      "emoji": "🧲",
+      "pieceScore": 5.0,
+      "rarity": "legendary",
+      "price": 1850,
+      "buyAP": 2,
+      "tax": 80,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.14,
+        "zeroStockWeight": 0.78
+      },
+      "movement": {
+        "type": "king",
+        "maxDistance": 2
+      },
+      "abilities": [
+        {
+          "id": "magnet_pull_on_move",
+          "params": {
+            "sourceRadius": 1,
+            "destinationRadius": 1,
+            "randomTarget": true
+          }
+        }
+      ],
+      "description": "주변 2칸까지 이동한다. 이동 후 주변 8칸의 기물 하나를 무작위로 자기 주변 빈칸으로 끌어온다."
+    },
+    "warp_bishop": {
+      "id": "warp_bishop",
+      "name": "워프 비숍",
+      "emoji": "🌀",
+      "pieceScore": 5.5,
+      "rarity": "legendary",
+      "price": 2100,
+      "buyAP": 2,
+      "tax": 85,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.12,
+        "zeroStockWeight": 0.82
+      },
+      "movement": {
+        "type": "bishop"
+      },
+      "stockfish": { "equivalent": "b", "confidencePenalty": 0.1 },
+      "abilities": [
+        {
+          "id": "paid_same_color_warp",
+          "params": {
+            "moneyCost": 450,
+            "apCost": 1
+          }
+        }
+      ],
+      "description": "비숍처럼 이동하며 돈과 AP를 내면 같은 색 칸 어디로든 순간이동할 수 있다."
+    },
+    "sniper": {
+      "id": "sniper",
+      "name": "저격수",
+      "emoji": "🔫",
+      "pieceScore": 7.0,
+      "rarity": "legendary",
+      "price": 2700,
+      "buyAP": 2,
+      "tax": 110,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.09,
+        "zeroStockWeight": 0.87
+      },
+      "movement": {
+        "type": "king",
+        "maxDistance": 1
+      },
+      "abilities": [
+        {
+          "id": "ranged_capture",
+          "params": {
+            "range": 3,
+            "requiresClearPath": true
+          }
+        }
+      ],
+      "description": "킹처럼 1칸 이동한다. 최대 3칸 거리의 기물을 제자리에서 포획할 수 있다."
+    },
+    "taxi": {
+      "id": "taxi",
+      "name": "택시",
+      "emoji": "🚕",
+      "pieceScore": 4.0,
+      "rarity": "rare",
+      "price": 1450,
+      "buyAP": 1,
+      "tax": 60,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.2,
+        "zeroStockWeight": 0.7
+      },
+    "movement": {
+      "type": "rook",
+      "maxDistance": 3
+    },
+    "stockfish": { "equivalent": "r", "confidencePenalty": 0.1 },
+      "abilities": [
+        {
+          "id": "carry_friendly_piece",
+          "params": {
+            "capacity": 1
+          }
+        }
+      ],
+      "description": "아군 기물 하나를 태우고 이동시킬 수 있다. 자체 전투력은 낮다."
+    },
+    "cavalry": {
+      "id": "cavalry",
+      "name": "기병대",
+      "emoji": "🏇",
+      "pieceScore": 5.5,
+      "rarity": "legendary",
+      "price": 2050,
+      "buyAP": 2,
+      "tax": 85,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.14,
+        "zeroStockWeight": 0.78
+      },
+      "movement": {
+        "type": "knight"
+      },
+      "stockfish": { "equivalent": "n", "confidencePenalty": 0.1 },
+      "abilities": [
+        {
+          "id": "bonus_move_on_capture",
+          "params": {
+            "chainable": true,
+            "apCost": 0
+          }
+        }
+      ],
+      "description": "나이트처럼 움직이며 포획 성공 시 추가 이동을 얻는다. 연쇄 포획 가능."
+    },
+    "fortress": {
+      "id": "fortress",
+      "name": "요새",
+      "emoji": "🏰",
+      "pieceScore": 6.0,
+      "rarity": "legendary",
+      "price": 2300,
+      "buyAP": 2,
+      "tax": 100,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.11,
+        "zeroStockWeight": 0.84
+      },
+    "movement": {
+      "type": "stationary"
+    },
+    "stockfish": { "equivalent": null, "confidencePenalty": 0.22 },
+      "abilities": [
+        {
+          "id": "ally_defense_aura",
+          "params": {
+            "radius": 1
+          }
+        },
+        {
+          "id": "king_shelter",
+          "params": {
+            "charges": 1
+          }
+        }
+      ],
+      "description": "움직이지 않는다. 주변 아군을 보호하며 킹이 요새 칸에 들어가 있으면 공격을 한 번 버틴다."
+    },
+    "fake_king": {
+      "id": "fake_king",
+      "name": "가짜 킹",
+      "emoji": "👑",
+      "pieceScore": 4.5,
+      "rarity": "rare",
+      "price": 1750,
+      "buyAP": 2,
+      "tax": 75,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.13,
+        "zeroStockWeight": 0.8
+      },
+    "movement": {
+      "type": "king"
+    },
+    "stockfish": { "equivalent": null, "confidencePenalty": 0.18 },
+      "abilities": [
+        {
+          "id": "fake_king_identity",
+          "params": {
+            "enemyDisplayAs": "king",
+            "captureAPPenalty": 2
+          }
+        }
+      ],
+      "description": "상대에게는 진짜 킹과 완전히 동일하게 보인다. 잡히면 정체가 공개되고 잡은 플레이어가 AP를 잃는다."
+    },
+    "judge": {
+      "id": "judge",
+      "name": "판사",
+      "emoji": "🧑‍⚖️",
+      "pieceScore": 6.0,
+      "rarity": "legendary",
+      "price": 2350,
+      "buyAP": 2,
+      "tax": 100,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.1,
+        "zeroStockWeight": 0.85
+      },
+      "movement": {
+        "type": "bishop"
+      },
+      "abilities": [
+        {
+          "id": "disable_enemy_specials_aura",
+          "params": {
+            "radius": 2
+          }
+        }
+      ],
+      "description": "범위 안의 상대 특수기물 능력을 봉인한다."
+    },
+    "pirate": {
+      "id": "pirate",
+      "name": "해적",
+      "emoji": "🏴‍☠️",
+      "pieceScore": 5.0,
+      "rarity": "legendary",
+      "price": 1900,
+      "buyAP": 2,
+      "tax": 80,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.15,
+        "zeroStockWeight": 0.76
+      },
+      "movement": {
+        "type": "rook",
+        "maxDistance": 4
+      },
+      "abilities": [
+        {
+          "id": "cash_steal_on_capture",
+          "params": {
+            "fractionOfVictimValue": 0.35,
+            "maxSteal": 700
+          }
+        }
+      ],
+      "description": "기물을 잡으면 일반 포획금 외에 상대 현금도 추가로 강탈한다."
+    },
+    "vampire": {
+      "id": "vampire",
+      "name": "흡혈귀",
+      "emoji": "🧛",
+      "pieceScore": 6.5,
+      "rarity": "legendary",
+      "price": 2200,
+      "buyAP": 2,
+      "tax": 90,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.1,
+        "zeroStockWeight": 0.85
+      },
+      "movement": {
+        "type": "progressive"
+      },
+      "abilities": [
+        {
+          "id": "grow_on_capture",
+          "params": {
+            "stages": [
+              {
+                "captures": 0,
+                "movement": "king"
+              },
+              {
+                "captures": 1,
+                "movement": "knight"
+              },
+              {
+                "captures": 2,
+                "movement": "rook"
+              },
+              {
+                "captures": 4,
+                "movement": "queen"
+              }
+            ]
+          }
+        }
+      ],
+      "description": "포획할수록 행마법이 강화된다. 충분히 성장하면 퀸급이 된다."
+    },
+    "swapper": {
+      "id": "swapper",
+      "name": "스왑퍼",
+      "emoji": "🔄",
+      "pieceScore": 4.5,
+      "rarity": "rare",
+      "price": 1600,
+      "buyAP": 1,
+      "tax": 65,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.18,
+        "zeroStockWeight": 0.72
+      },
+      "movement": {
+        "type": "king"
+      },
+      "abilities": [
+        {
+          "id": "paid_friendly_swap",
+          "params": {
+            "moneyCost": 350,
+            "apCost": 1
+          }
+        }
+      ],
+      "description": "돈과 AP를 내고 자신과 아군 기물의 위치를 교환한다."
+    },
+    "mirror": {
+      "id": "mirror",
+      "name": "거울",
+      "emoji": "🪞",
+      "pieceScore": 7.0,
+      "rarity": "legendary",
+      "price": 2800,
+      "buyAP": 2,
+      "tax": 115,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.08,
+        "zeroStockWeight": 0.88
+      },
+      "movement": {
+        "type": "king"
+      },
+      "abilities": [
+        {
+          "id": "mirror_first_attack",
+          "params": {
+            "mode": "random_copy_or_reflect",
+            "charges": 1
+          }
+        }
+      ],
+      "description": "처음 공격받았을 때 공격자의 특수능력을 복사하거나 공격을 반사한다."
+    },
+    "wall": {
+      "id": "wall",
+      "name": "벽",
+      "emoji": "🧱",
+      "pieceScore": 1.5,
+      "rarity": "common",
+      "price": 180,
+      "buyAP": 0,
+      "tax": 10,
+      "stock": {
+        "max": 5,
+        "restockChance": 0.75,
+        "zeroStockWeight": 0.2
+      },
+      "movement": {
+        "type": "stationary"
+      },
+      "abilities": [
+        {
+          "id": "solid_obstacle",
+          "params": {}
+        }
+      ],
+      "description": "못 움직이고 대부분의 기물이 통과할 수 없는 값싼 장애물. 부동산입니다."
+    },
+    "rental_house": {
+      "id": "rental_house",
+      "name": "임대주택",
+      "emoji": "🏠",
+      "pieceScore": 3.5,
+      "rarity": "rare",
+      "price": 1100,
+      "buyAP": 1,
+      "tax": 45,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.2,
+        "zeroStockWeight": 0.7
+      },
+      "movement": {
+        "type": "stationary"
+      },
+      "stockfish": { "equivalent": null, "confidencePenalty": 0.22 },
+      "abilities": [
+        {
+          "id": "nearby_toll_bonus",
+          "params": {
+            "radius": 1,
+            "multiplier": 1.8
+          }
+        }
+      ],
+      "description": "움직이지 않는다. 상대가 주변 칸을 밟을 때 해당 통행료 수익을 증가시킨다."
+    },
+    "bankrupt_queen": {
+      "id": "bankrupt_queen",
+      "name": "파산한 퀸",
+      "emoji": "☢️",
+      "pieceScore": 7.0,
+      "rarity": "rare",
+      "price": 2400,
+      "buyAP": 2,
+      "tax": 420,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.16,
+        "zeroStockWeight": 0.74
+      },
+      "movement": {
+        "type": "queen"
+      },
+      "stockfish": { "equivalent": "q", "confidencePenalty": 0.12 },
+      "abilities": [
+        {
+          "id": "defect_on_unpaid_tax",
+          "params": {
+            "toOpponent": true
+          }
+        }
+      ],
+      "description": "퀸처럼 움직이지만 유지세가 매우 높다. 세금을 못 내면 상대편으로 넘어간다."
+    },
+    "credit_card_knight": {
+      "id": "credit_card_knight",
+      "name": "신용카드 기사",
+      "emoji": "💳",
+      "pieceScore": 5.0,
+      "rarity": "legendary",
+      "price": 1800,
+      "buyAP": 2,
+      "tax": 70,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.12,
+        "zeroStockWeight": 0.82
+      },
+      "movement": {
+        "type": "knight"
+      },
+      "abilities": [
+        {
+          "id": "allow_credit_purchases",
+          "params": {
+            "creditLimit": 3500,
+            "interestPerTurn": 0.08,
+            "debtPersistsAfterCapture": true
+          }
+        }
+      ],
+      "description": "나이트처럼 움직인다. 돈이 부족해도 한도 내에서 빚으로 구매할 수 있으며 매 턴 이자가 붙는다."
+    },
+    "venture_knight": {
+      "id": "venture_knight",
+      "name": "벤처 나이트",
+      "emoji": "🚀",
+      "pieceScore": 4.0,
+      "rarity": "rare",
+      "price": 1250,
+      "buyAP": 1,
+      "tax": 55,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.19,
+        "zeroStockWeight": 0.71
+      },
+      "movement": {
+        "type": "random_on_purchase"
+      },
+      "abilities": [
+        {
+          "id": "venture_roll",
+          "params": {
+            "outcomes": [
+              {
+                "weight": 0.45,
+                "movement": "pawn",
+                "score": 1
+              },
+              {
+                "weight": 0.4,
+                "movement": "knight_bishop",
+                "score": 5
+              },
+              {
+                "weight": 0.15,
+                "movement": "queen",
+                "score": 9
+              }
+            ]
+          }
+        }
+      ],
+      "description": "구매 시 성능이 랜덤 결정된다. 실패하면 폰급, 성공하면 나이트+비숍, 대박이면 퀸급."
+    },
+    "short_seller": {
+      "id": "short_seller",
+      "name": "공매도꾼",
+      "emoji": "📉",
+      "pieceScore": 4.5,
+      "rarity": "rare",
+      "price": 1550,
+      "buyAP": 1,
+      "tax": 65,
+      "stock": {
+        "max": 2,
+        "restockChance": 0.18,
+        "zeroStockWeight": 0.72
+      },
+      "movement": {
+        "type": "dynamic"
+      },
+      "abilities": [
+        {
+          "id": "power_from_enemy_stock_losses",
+          "params": {
+            "thresholds": [
+              {
+                "lossPct": 0,
+                "rangeBonus": 0,
+                "captureBonus": 0
+              },
+              {
+                "lossPct": 10,
+                "rangeBonus": 1,
+                "captureBonus": 0.2
+              },
+              {
+                "lossPct": 25,
+                "rangeBonus": 2,
+                "captureBonus": 0.5
+              }
+            ]
+          }
+        }
+      ],
+      "description": "상대 보유 주식의 손실이 커질수록 이동범위와 포획 보상이 증가한다."
+    },
+    "chaebol_king": {
+      "id": "chaebol_king",
+      "name": "재벌 킹",
+      "emoji": "🤑",
+      "pieceScore": 13.0,
+      "rarity": "mythic",
+      "price": 6200,
+      "buyAP": 3,
+      "tax": 300,
+      "upgradeOnly": true,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.025,
+        "zeroStockWeight": 0.97
+      },
+      "movement": {
+        "type": "king"
+      },
+      "abilities": [
+        {
+          "id": "hostile_takeover",
+          "params": {
+            "radius": 1,
+            "premiumFraction": 0.35
+          }
+        }
+      ],
+      "description": "일반 킹을 업그레이드하는 신화 기물. 주변 적 기물을 해당 가치+프리미엄을 내고 아군으로 인수할 수 있다."
+    },
+    "mounted_king_mk2": {
+      "id": "mounted_king_mk2",
+      "name": "말에 탄 킹 Mk.II",
+      "icon": "🐎👑",
+      "pieceScore": 11.0,
+      "rarity": "mythic",
+      "price": 5600,
+      "buyAP": 3,
+      "tax": 260,
+      "upgradeOnly": true,
+      "stock": {
+        "max": 1,
+        "restockChance": 0.035,
+        "zeroStockWeight": 0.96
+      },
+      "movement": {
+        "type": "compound",
+        "modes": [
+          "king",
+          "knight"
+        ]
+      },
+      "abilities": [
+        {
+          "id": "royal_unit",
+          "params": {
+            "countsAsKing": true
+          }
+        },
+        {
+          "id": "dismount_escape",
+          "params": {
+            "charges": 1,
+            "escapeRadius": 1
+          }
+        }
+      ],
+      "description": "킹+나이트 이동. 잡히기 직전 말을 버리고 인접 빈칸으로 킹만 탈출할 수 있다.",
+      "warnings": [
+        "탈출 가능 칸이 없으면 그대로 잡힘"
+      ]
+    }
+  }
+}

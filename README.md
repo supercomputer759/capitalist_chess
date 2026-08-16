@@ -27,13 +27,13 @@ Windows에서는 `START_GAME.bat`을 더블클릭하면 된다.
 - 폰 즉시 승급
 - 기물 즉시이동
 - 킹 부활 보험
-- 체크 / 체크메이트
-- 파산 패배
-- Stockfish 연결 훅 (엔진 파일이 있으면 최선수/탁월수 보너스)
+- 체크 위험 시각효과 / 상대 킹 실제 포획 승리
+- 파산 자산 상태 표시(게임 종료는 상대 킹 포획)
+- Stockfish 18 lite single-threaded 일반 체스 수 평가 및 현금 보너스
 
 ## Stockfish 연결
 
-`engine/` 폴더에 아래 두 파일을 넣으면 게임이 자동으로 감지한다.
+`engine/` 폴더에 Stockfish 18 lite single-threaded 파일을 포함한다.
 
 - `stockfish-18-lite-single.js`
 - `stockfish-18-lite-single.wasm`
@@ -43,8 +43,10 @@ Windows에서는 `START_GAME.bat`을 더블클릭하면 된다.
 
 현재 보너스 기준:
 
-- Stockfish 최선수와 동일: +$160
-- 최선수이면서 포획 또는 체크: `!! 탁월수` +$350
+- `!! 탁월수`: +$300
+- `! 최선수`: +$180
+- `✓ 좋은 수`: +$80
+- 특수기물로 인해 분석 신뢰도가 낮으면 보너스 없음
 
 (탁월수 판정 규칙은 나중에 더 정교하게 갈아엎을 예정.)
 
