@@ -25,8 +25,8 @@
           if(this.code&&this.token){this.setStatus("reconnecting","재연결 중...");this.sendRaw({type:"reconnect",code:this.code,token:this.token,lastRevision:this.stateRevision});}
           resolve();
         };
-        socket.onerror=()=>{if(!opened)reject(new Error("Multiplayer server connection failed"));this.setStatus("error","서버 연결 실패");};
-        socket.onclose=()=>{this.stopHeartbeat();this.socket=null;if(!this.intentionalDisconnect&&this.code&&this.token)this.scheduleReconnect();else this.setStatus("offline","연결 종료");};
+        socket.onerror=()=>{if(!opened)reject(new Error("Multiplayer server connection failed"));if(!this.intentionalDisconnect&&this.code&&this.token)this.setStatus("booting","서버 부팅 중…");else this.setStatus("error","서버 연결 실패");};
+        socket.onclose=()=>{this.stopHeartbeat();this.socket=null;if(!this.intentionalDisconnect&&this.code&&this.token){this.setStatus("booting","서버 부팅 중…");this.scheduleReconnect();}else this.setStatus("offline","방 연결이 종료됐어.");};
         socket.onmessage=e=>this.receive(e.data);
       }).finally(()=>{this._connectPromise=null;});
       return this._connectPromise;
@@ -38,7 +38,7 @@
     scheduleReconnect(){
       if(this.intentionalDisconnect||this.reconnectTimer||!this.code||!this.token)return;
       const delay=Math.min(10000,1000*Math.pow(2,this.reconnectAttempt++));
-      this.reconnecting=true;this.setStatus("reconnecting","재연결 중...");
+      this.reconnecting=true;this.setStatus("connecting","서버에 연결 중…");
       this.reconnectTimer=setTimeout(()=>{this.reconnectTimer=null;this.connect().catch(()=>this.scheduleReconnect());},delay);
     }
     async createRoom(){this.cancelReconnect();this.clearSession();await this.connect();this.send({type:"create",state:window.serializeGameState?.()||null,revision:window.gameState?.engineRevision||0});}
@@ -66,7 +66,7 @@
       if(message.type==="action"){this.onAction?.(message.action,message.token);return;}
       if(message.type==="error"){this.setStatus("error",message.message||"멀티플레이 오류");if(this.reconnecting){this.intentionalDisconnect=false;this.socket?.close();}}
     }
-    renderStatus(status,detail){const el=document.getElementById("multiplayerStatus");if(el)el.textContent=detail||({offline:"오프라인",connecting:"연결 중...",connected:"서버 연결됨",reconnecting:"재연결 중...",waiting:"상대 재접속 기다리는 중...",room:"방 연결됨",error:"연결 오류"}[status]||status);}
+    renderStatus(status,detail){const el=document.getElementById("multiplayerStatus");if(el)el.textContent=detail||({offline:"오프라인",booting:"서버 부팅 중…",connecting:"서버에 연결 중…",connected:"서버 연결됨",reconnecting:"재연결 중…",waiting:"상대 재접속 기다리는 중…",room:"방 연결됨",error:"연결 오류"}[status]||status);}
     updateRoomUI(){const code=document.getElementById("roomCodeValue");if(code)code.textContent=this.code||"-";const role=document.getElementById("multiplayerRole");if(role)role.textContent=this.role==="host"?"Host · 백":this.role==="guest"?"Guest · 흑":"로컬 게임";}
     bindUI(){
       const modal=document.getElementById("multiplayerModal");
