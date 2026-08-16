@@ -1,11 +1,10 @@
 (function(){
   "use strict";
-  const DEBUG_STOCKFISH=true;
   class StockfishEngine{
     constructor(){this.worker=null;this.ready=false;this.status="idle";this.statusHandler=null;this.pending=null;this.waiters=[];this.requestSerial=0;this.initPromise=null;this.queue=Promise.resolve();}
     setStatusHandler(handler){this.statusHandler=handler;this.emit(this.status);return this;}
     emit(status,detail=""){this.status=status;this.statusHandler?.({status,detail});}
-    debug(direction,line){if(DEBUG_STOCKFISH)console.log(`[SF ${direction}] ${line}`);}
+    debug(direction,line){if(window.DEBUG_STOCKFISH===true)console.log(`[SF ${direction}] ${line}`);}
     send(command){if(!this.worker)throw new Error("Stockfish worker unavailable");this.debug(">>",command);this.worker.postMessage(command);}
     waitForLine(predicate,timeout=5000){return new Promise((resolve,reject)=>{const waiter={predicate,resolve,reject,timer:null};waiter.timer=setTimeout(()=>{this.waiters=this.waiters.filter(item=>item!==waiter);reject(new Error("Stockfish UCI response timeout"));},timeout);this.waiters.push(waiter);});}
     async sendAndWait(command,predicate,timeout=5000){const response=this.waitForLine(predicate,timeout);this.send(command);return response;}

@@ -19,6 +19,8 @@
 *{box-sizing:border-box}
 .player-clock{font-size:30px;font-weight:950;line-height:1.05;letter-spacing:.5px;font-variant-numeric:tabular-nums;margin:5px 0 6px}.player-clock.warning{color:var(--red);animation:timerPulse .8s ease-in-out infinite}
 .audio-controls{display:flex;gap:4px;margin-left:4px}.audio-toggle{width:30px;height:30px;padding:3px;border-radius:9px}.audio-toggle img{width:100%;height:100%;object-fit:contain;display:block}
+.debug-toggle{font-size:9px;font-weight:900;color:var(--muted);border:1px solid var(--line);background:var(--panel)}.debug-toggle.active{color:#071b20;background:#55e4c6;border-color:#55e4c6;box-shadow:0 0 12px rgba(85,228,198,.55)}
+.multiplayer-bar{display:flex;align-items:center;gap:6px;margin-top:5px;color:var(--muted);font-size:11px}.multiplayer-bar .ghost{padding:3px 8px;font-size:11px}.multiplayer-card{position:relative;max-width:520px}.multiplayer-card h2{margin-top:0}.multiplayer-actions{display:flex;gap:8px;align-items:center;margin:18px 0}.multiplayer-actions input{min-width:110px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);text-transform:uppercase}.room-code-box{display:flex;align-items:center;gap:12px;padding:14px;border:1px dashed var(--line);border-radius:10px;margin-bottom:12px}.room-code-box strong{font-size:25px;letter-spacing:.16em;color:var(--gold)}.room-code-box .ghost{margin-left:auto}
 .special-piece-shop{grid-template-columns:repeat(4,minmax(0,1fr));max-height:180px;gap:3px}.special-shop-item{padding:3px 1px}.special-shop-icon{font-size:20px}.special-shop-item small{font-size:8px}.special-stock{font-size:8px}
 .square.king-danger{box-shadow:inset 0 0 0 4px rgba(190,55,55,.78),inset 0 0 22px rgba(190,55,55,.28)}.square.king-danger::after{content:"☠" !important;position:absolute;inset:auto;z-index:4;color:#a63232;font-size:clamp(13px,2.2vw,25px);font-weight:900;text-shadow:0 1px 2px rgba(255,255,255,.65)}
 .piece-id{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;overflow-wrap:anywhere}footer{display:block}
@@ -325,3 +327,44 @@ footer{display:block}
 @keyframes bestJump{0%{transform:translateY(75vh) scale(.55);opacity:0}18%{opacity:1}48%{transform:translateY(-8vh) scale(1.12);opacity:1}70%{transform:translateY(2vh) scale(1);opacity:1}100%{transform:translateY(-72vh) scale(.72);opacity:0}}
 @keyframes brilliantTakeover{0%{transform:translateY(35vh) scale(.25) rotate(-8deg);opacity:0}18%{opacity:1}48%{transform:translateY(0) scale(1.5) rotate(2deg);opacity:1}70%{transform:translateY(-2vh) scale(1.18) rotate(0);opacity:1}100%{transform:translateY(72vh) scale(2.2);opacity:0}}
 @keyframes gradeFlash{0%{opacity:0;transform:scale(.6)}25%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.35)}}
+
+/* Move Grade Cinematic VFX System */
+.move-grade-overlay.cinematic{opacity:1;isolation:isolate}
+.vfx-backdrop{position:absolute;inset:0;background:rgba(10,14,22,0);animation:vfxBackdrop 1s ease-out both}
+.vfx-copy{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;font-family:inherit;pointer-events:none}
+.vfx-title,.vfx-symbol,.vfx-bonus{position:relative;z-index:4;line-height:.95;font-style:italic}
+.vfx-title{font-size:clamp(34px,7vw,104px);font-weight:1000;letter-spacing:.08em}
+.vfx-symbol{font-size:clamp(34px,8vw,116px);font-weight:1000}
+.vfx-bonus{margin-top:18px;font-size:clamp(18px,3vw,38px);font-weight:900;letter-spacing:.04em}
+.vfx-target{position:fixed;left:var(--target-x,50vw);top:var(--target-y,50vh);width:8px;height:8px;z-index:2;transform:translate(-50%,-50%);pointer-events:none}
+.vfx-ring{position:absolute;left:50%;top:50%;width:30px;height:30px;border:3px solid currentColor;border-radius:50%;transform:translate(-50%,-50%) scale(.2);opacity:0}
+.vfx-particles{position:absolute;left:50%;top:50%;z-index:3;pointer-events:none}
+.vfx-particle{position:absolute;width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor;transform:translate(-50%,-50%) scale(0);animation:vfxParticle 1.05s cubic-bezier(.16,.8,.25,1) var(--delay) both}
+.vfx-streaks{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0}
+.grade-brilliant{color:#ffd45b}.grade-brilliant .vfx-backdrop{background:rgba(18,12,4,.18);animation:vfxBackdrop 1.8s ease-out both}.grade-brilliant .vfx-title{color:#fff2a6;text-shadow:0 0 12px #fff,0 0 32px #ffbd28,0 0 80px #f06a00;animation:brilliantTitle 1.8s cubic-bezier(.15,.8,.22,1) both}.grade-brilliant .vfx-symbol{color:#fff;text-shadow:0 0 20px #fff,0 0 55px #ff9e18;animation:brilliantSymbol 1.8s ease-out both}.grade-brilliant .vfx-bonus{color:#ffd45b;text-shadow:0 0 18px #ff9e18;animation:vfxBonus 1.8s ease-out both}.grade-brilliant .vfx-ring{animation:vfxRing 1.7s ease-out calc(var(--ring-delay,0s)) both}.grade-brilliant .vfx-particle{color:#ffd45b}
+.grade-brilliant .vfx-ring:nth-child(2){--ring-delay:.16s}
+.grade-brilliant.variant-slash .vfx-streaks,.grade-brilliant.variant-crown .vfx-streaks{opacity:1;background:linear-gradient(45deg,transparent 42%,rgba(255,216,100,.85) 49%,transparent 52%),linear-gradient(-45deg,transparent 42%,rgba(255,155,30,.8) 49%,transparent 52%);animation:vfxStreak 1.2s ease-out both}
+.grade-brilliant.variant-crown .vfx-streaks{background:radial-gradient(ellipse at 50% 0,rgba(255,217,80,.9),transparent 30%);animation:vfxCrown 1.4s ease-out both}
+.grade-best{color:#46e1c0}.grade-best .vfx-backdrop{background:rgba(8,55,65,.08);animation:vfxBackdrop 1.4s ease-out both}.grade-best .vfx-title{color:#8affec;text-shadow:0 0 22px #18bba5;animation:bestCinematic 1.4s ease-out both}.grade-best .vfx-bonus{color:#55e4c6;animation:vfxBonus 1.4s ease-out both}.grade-best .vfx-ring{animation:vfxRing 1.2s ease-out both}.grade-best .vfx-particle{color:#64e8d0}.grade-best.variant-sweep .vfx-streaks{opacity:1;background:linear-gradient(90deg,transparent,rgba(60,225,200,.55),transparent);animation:vfxSweep 1.2s ease-out both}
+.grade-excellent{color:#a987ff}.grade-excellent .vfx-title{color:#d0bdff;text-shadow:0 0 25px #6e4fd4;animation:excellentCross 1.1s ease-out both}.grade-excellent .vfx-streaks{opacity:1;background:linear-gradient(90deg,transparent 15%,rgba(135,100,255,.6),transparent 48%,rgba(70,175,255,.6),transparent 85%);animation:vfxSweep 1.1s ease-out both}
+.grade-good{color:#48d787}.grade-good .vfx-title{color:#8dffb9;text-shadow:0 0 18px #28bb69;font-size:clamp(30px,5vw,70px);animation:goodFloat .9s ease-out both}.grade-good .vfx-bonus{color:#75efa0;font-size:clamp(16px,2vw,28px);animation:vfxBonus .9s ease-out both}.grade-good .vfx-target{animation:goodPulse .9s ease-out both}.grade-good .vfx-ring{animation:vfxRing .8s ease-out both}.grade-good .vfx-particle{color:#58e28b}
+.grade-inaccuracy{color:#e8c84d}.grade-inaccuracy .vfx-title{color:#ffe992;font-size:clamp(24px,4vw,54px);animation:vfxWobble .85s ease-out both}.grade-mistake{color:#ef7445}.grade-mistake .vfx-title{color:#ff9a62;font-size:clamp(26px,4vw,60px);animation:vfxDrop 1s ease-out both}.grade-blunder{color:#ef3d4f}.grade-blunder .vfx-backdrop{background:rgba(65,0,8,.25);animation:blunderFlash 1.2s ease-out both}.grade-blunder .vfx-title{color:#ff5362;text-shadow:0 0 20px #b30018;font-size:clamp(30px,6vw,88px);animation:blunderImpact 1.2s ease-out both}.grade-unrated{color:#9da5af}.grade-unrated .vfx-title{font-size:clamp(20px,3vw,42px);letter-spacing:.18em;animation:vfxScan .85s steps(3,end) both}.grade-unrated .vfx-backdrop{background:rgba(100,110,120,.06);animation:vfxBackdrop .85s ease-out both}
+@keyframes vfxBackdrop{0%{opacity:0}20%{opacity:1}100%{opacity:0}}
+@keyframes vfxParticle{0%{opacity:0;transform:translate(-50%,-50%) scale(0) rotate(0)}18%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--x)),calc(-50% + var(--y))) scale(var(--scale)) rotate(var(--rotate))}}
+@keyframes vfxRing{0%{opacity:.9;transform:translate(-50%,-50%) scale(.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.5)}}
+@keyframes brilliantSymbol{0%{opacity:0;transform:scale(.3)}18%{opacity:1;transform:scale(1.3)}55%{transform:scale(1)}100%{opacity:0;transform:scale(1.25)}}
+@keyframes brilliantTitle{0%{opacity:0;transform:scale(.3)}22%{opacity:0;transform:scale(.3)}42%{opacity:1;transform:scale(1.15)}65%{transform:scale(1)}100%{opacity:0;transform:translateY(-12px) scale(1.04)}}
+@keyframes vfxBonus{0%,20%{opacity:0;transform:translateY(16px)}42%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-28px)}}
+@keyframes vfxSweep{0%{transform:translateX(-80%) scaleX(.4)}100%{transform:translateX(80%) scaleX(1.2);opacity:0}}
+@keyframes vfxStreak{0%{transform:scale(.2);opacity:0}30%{opacity:1}100%{transform:scale(1.4);opacity:0}}
+@keyframes vfxCrown{0%{transform:translateY(-30%) scale(.5);opacity:0}35%{opacity:1}100%{transform:translateY(30%) scale(1.2);opacity:0}}
+@keyframes bestCinematic{0%{opacity:0;transform:scale(.6) translateY(20px)}30%{opacity:1}100%{opacity:0;transform:scale(1.05) translateY(-18px)}}
+@keyframes excellentCross{0%{opacity:0;transform:scale(.75)}30%{opacity:1}100%{opacity:0;transform:scale(1.05)}}
+@keyframes goodFloat{0%{opacity:0;transform:translateY(28px) scale(.8)}25%{opacity:1}100%{opacity:0;transform:translateY(-48px) scale(1)}}
+@keyframes goodPulse{0%{box-shadow:0 0 0 0 currentColor}45%{box-shadow:0 0 0 30px transparent}100%{box-shadow:0 0 0 48px transparent}}
+@keyframes vfxWobble{0%,100%{transform:translateX(0);opacity:0}25%{opacity:1;transform:translateX(-7px)}50%{transform:translateX(7px)}75%{transform:translateX(-3px)}}
+@keyframes vfxDrop{0%{opacity:0;transform:translateY(-18px)}20%{opacity:1}100%{opacity:0;transform:translateY(34px)}}
+@keyframes blunderFlash{0%{opacity:0}15%{opacity:1}30%{opacity:.25}100%{opacity:0}}
+@keyframes blunderImpact{0%{opacity:0;transform:scale(1.8)}15%{opacity:1;transform:scale(.9)}25%{transform:translateX(-5px)}35%{transform:translateX(5px)}100%{opacity:0;transform:scale(1)}}
+@keyframes vfxScan{0%{opacity:0;clip-path:inset(0 50% 0 50%)}35%{opacity:1;clip-path:inset(0)}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.move-grade-overlay *{animation-duration:.35s!important;animation-iteration-count:1!important}.vfx-particles,.vfx-streaks{display:none}.grade-blunder .vfx-backdrop{animation-name:vfxBackdrop}}

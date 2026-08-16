@@ -10,7 +10,9 @@ const PIECES = {
   k: {name:"킹", price:null, captureReward:0, tax:0, purchasable:false}
 };
 const PIECE_SCORE = {p:1,n:3,b:3,r:5,q:9,k:0};
-const DEBUG_STOCKFISH = true;
+let DEBUG_STOCKFISH = false;
+try{DEBUG_STOCKFISH=localStorage.getItem("capitalistChessStockfishDebug")==="true";}catch(_){ }
+window.DEBUG_STOCKFISH=DEBUG_STOCKFISH;
 const CFG = {
   startMoney: 1200,
   startSalary: 220,
@@ -186,10 +188,23 @@ function renderAudioControls(){
   if(sound){sound.src=`assets/images/sound_${state.audio.sound?"on":"off"}.png`;sound.alt=state.audio.sound?"효과음 켜짐":"효과음 꺼짐";}
   if(bgm){bgm.src=`assets/images/bgm_${state.audio.bgm?"on":"off"}.png`;bgm.alt=state.audio.bgm?"배경음악 켜짐":"배경음악 꺼짐";}
 }
+function renderStockfishDebugControl(){
+  const debug=document.getElementById("stockfishDebugToggle");
+  if(!debug)return;
+  debug.classList.toggle("active",DEBUG_STOCKFISH);
+  debug.setAttribute("aria-pressed",String(DEBUG_STOCKFISH));
+  debug.title=`Stockfish DEBUG 로그 ${DEBUG_STOCKFISH?"끄기":"켜기"}`;
+}
+function setStockfishDebug(enabled){
+  DEBUG_STOCKFISH=Boolean(enabled);window.DEBUG_STOCKFISH=DEBUG_STOCKFISH;
+  try{localStorage.setItem("capitalistChessStockfishDebug",String(DEBUG_STOCKFISH));}catch(_){ }
+  renderAudioControls();renderStockfishDebugControl();
+}
 function bindAudioControls(){
-  loadAudioSettings();renderAudioControls();
+  loadAudioSettings();renderAudioControls();renderStockfishDebugControl();
   document.getElementById("soundToggle")?.addEventListener("click",()=>{state.audio.sound=!state.audio.sound;saveAudioSettings();renderAudioControls();if(state.audio.sound)playSound("click");});
   document.getElementById("bgmToggle")?.addEventListener("click",()=>{state.audio.bgm=!state.audio.bgm;saveAudioSettings();if(state.audio.bgm)startBgm();else stopBgm();renderAudioControls();});
+  document.getElementById("stockfishDebugToggle")?.addEventListener("click",()=>setStockfishDebug(!DEBUG_STOCKFISH));
   document.addEventListener("pointerdown",()=>{state.audio.started=true;startBgm();},{once:true});
 }
 
@@ -200,6 +215,73 @@ function cheatPlayer(color){
 }
 
 window.gameState=state;
+function serializeGameState(){
+  return JSON.parse(JSON.stringify({
+    schemaVersion:1,
+    revision:state.engineRevision,
+    board:state.board,
+    turn:state.turn,
+    turnNo:state.turnNo,
+    players:state.players,
+    visits:state.visits,
+    properties:state.properties,
+    lastMove:state.lastMove,
+    gameOver:state.gameOver,
+    specialStock:state.specialStock,
+    specialRestockTurn:state.specialRestockTurn,
+    clock:state.clock,
+    drawOffer:state.drawOffer,
+    news:state.news,
+    recentNewsIds:state.recentNewsIds
+  }));
+}
+function applyGameState(snapshot){
+  if(!snapshot||snapshot.schemaVersion!==1)return false;
+  state.board=snapshot.board||state.board;state.turn=snapshot.turn||state.turn;state.turnNo=Number(snapshot.turnNo||state.turnNo);
+  state.players=snapshot.players||state.players;state.visits=snapshot.visits||{};state.properties=snapshot.properties||{};state.lastMove=snapshot.lastMove||null;
+  state.gameOver=Boolean(snapshot.gameOver);state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
+  state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();return true;
+}
+window.serializeGameState=serializeGameState;window.applyGameState=applyGameState;
+window.handleMultiplayerAction=function(action){
+  if(window.multiplayer?.role!=="host"||!action||state.turn!=="b")return;
+  if(action.type==="endTurn")return endTurn();
+  if(action.type==="draw")return requestDraw();
+  if(action.type==="purchase"){
+    state.mode=action.specialId?"special-buy":"buy";state.pendingSpecialId=action.specialId||null;state.pendingPiece=action.piece||null;
+    return finishPurchase(action.r,action.c);
+  }
+  if(action.type==="teleport"){
+    state.selected=action.selected;return finishTeleport(action.r,action.c);
+  }
+  if(["job","salary","deposit","venture","insurance","promote","buyProperty","sellPiece","stockBuy","stockSell"].includes(action.type)){
+    if(action.selected){state.selected=action.selected;}
+    if(action.type==="job")return doJob();
+    if(action.type==="salary")return raiseSalary();
+    if(action.type==="deposit")return makeDeposit();
+    if(action.type==="venture")return makeVenture();
+    if(action.type==="insurance")return buyInsurance();
+    if(action.type==="promote")return instantPromote();
+    if(action.type==="buyProperty")return buyProperty();
+    if(action.type==="sellPiece")return sellSelectedPiece();
+    if(action.type==="stockBuy"||action.type==="stockSell"){
+      const select=document.getElementById("stockSelect"),qty=document.getElementById("stockQty");
+      if(select&&action.key)select.value=action.key;if(qty&&action.qty)qty.value=action.qty;
+      return tradeStock(action.type==="stockBuy");
+    }
+  }
+  if(action.type!=="move")return;
+  const from=fromName(action.from),to=fromName(action.to),legal=legalMovesFor(from.r,from.c).some(cell=>cell.r===to.r&&cell.c===to.c);
+  if(!legal)return log("온라인 상대의 불법 이동 요청을 거부했어.","bad");
+  makeMove(from.r,from.c,to.r,to.c);
+};
+function runMultiplayerAction(type,local,payload=()=>({})){
+  return (...args)=>{
+    if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type,...payload(...args)});return;}
+    local(...args);
+  };
+}
+window.setStockfishDebug=setStockfishDebug;
 window.cheat={
   money(color,amount){
     cheatPlayer(color).money=Number(amount);
@@ -240,7 +322,22 @@ window.cheat={
   },
   fillStock(amount=null){
     return this.fillSpecialStock(amount);
-  }
+  },
+  effect(grade="brilliant",bonus=null){
+    const key=String(grade).toLowerCase();
+    const config=MOVE_GRADE_VFX[key]||MOVE_GRADE_VFX.brilliant;
+    const value=bonus===null?config.defaultBonus:Number(bonus)||0;
+    showMoveGradeEffect({grade:key,bonus:value,square:state.lastMove,moveId:`cheat-${Date.now()}`});
+    if(key==="brilliant")playSound("brilliant");
+  },
+  brilliant(bonus=350){this.effect("brilliant",bonus);},
+  best(bonus=160){this.effect("best",bonus);},
+  excellent(bonus=0){this.effect("excellent",bonus);},
+  good(bonus=60){this.effect("good",bonus);},
+  inaccuracy(){this.effect("inaccuracy",0);},
+  mistake(){this.effect("mistake",0);},
+  blunder(){this.effect("blunder",0);},
+  unrated(){this.effect("unrated",0);}
 };
 window.cheat.clock=(color,seconds)=>{
   const normalized=String(color).toLowerCase();
@@ -269,6 +366,7 @@ async function init() {
   buildStocks();
   bindControls();
   bindAudioControls();
+  if(window.multiplayer){window.multiplayer.onAction=action=>window.handleMultiplayerAction(action);window.multiplayer.onState=snapshot=>applyGameState(snapshot);window.multiplayer.bindUI();}
   addNews("시장", "자본주의 체스 거래소가 개장했다. 모두의 통장이 무사하길.");
   log("게임 시작. 양측 킹 1개 + $1,500.","gold");
   initStockfish();
@@ -553,21 +651,21 @@ function buildStocks(){
 }
 
 function bindControls(){
-  document.getElementById("endTurnBtn").onclick=endTurn;
+  document.getElementById("endTurnBtn").onclick=runMultiplayerAction("endTurn",endTurn);
   document.getElementById("cancelModeBtn").onclick=clearMode;
   document.getElementById("clearLogBtn").onclick=()=>document.getElementById("log").innerHTML="";
-  document.getElementById("jobBtn").onclick=doJob;
-  document.getElementById("salaryBtn").onclick=raiseSalary;
-  document.getElementById("depositBtn").onclick=makeDeposit;
-  document.getElementById("ventureBtn").onclick=makeVenture;
-  document.getElementById("promoteBtn").onclick=instantPromote;
+  document.getElementById("jobBtn").onclick=runMultiplayerAction("job",doJob);
+  document.getElementById("salaryBtn").onclick=runMultiplayerAction("salary",raiseSalary);
+  document.getElementById("depositBtn").onclick=runMultiplayerAction("deposit",makeDeposit);
+  document.getElementById("ventureBtn").onclick=runMultiplayerAction("venture",makeVenture);
+  document.getElementById("promoteBtn").onclick=runMultiplayerAction("promote",instantPromote,()=>({selected:state.selected}));
   document.getElementById("teleportBtn").onclick=startTeleport;
-  document.getElementById("insuranceBtn").onclick=buyInsurance;
-  document.getElementById("buyPropertyBtn").onclick=buyProperty;
-  document.getElementById("sellPieceBtn").onclick=sellSelectedPiece;
-  document.getElementById("stockBuyBtn").onclick=()=>tradeStock(true);
-  document.getElementById("stockSellBtn").onclick=()=>tradeStock(false);
-  document.getElementById("drawBtn").onclick=requestDraw;
+  document.getElementById("insuranceBtn").onclick=runMultiplayerAction("insurance",buyInsurance);
+  document.getElementById("buyPropertyBtn").onclick=runMultiplayerAction("buyProperty",buyProperty,()=>({selected:state.selected}));
+  document.getElementById("sellPieceBtn").onclick=runMultiplayerAction("sellPiece",sellSelectedPiece,()=>({selected:state.selected}));
+  document.getElementById("stockBuyBtn").onclick=runMultiplayerAction("stockBuy",()=>tradeStock(true),()=>({key:document.getElementById("stockSelect")?.value,qty:document.getElementById("stockQty")?.value}));
+  document.getElementById("stockSellBtn").onclick=runMultiplayerAction("stockSell",()=>tradeStock(false),()=>({key:document.getElementById("stockSelect")?.value,qty:document.getElementById("stockQty")?.value}));
+  document.getElementById("drawBtn").onclick=runMultiplayerAction("draw",requestDraw);
   ["cancelModeBtn","clearLogBtn","salaryBtn","depositBtn","ventureBtn","promoteBtn","teleportBtn","insuranceBtn","sellPieceBtn","stockBuyBtn","stockSellBtn"].forEach(id=>{
     document.getElementById(id)?.addEventListener("click",()=>playSound("click"));
   });
@@ -602,11 +700,23 @@ function clickSquare(r,c){
   const p=state.board[r][c];
   const key=sqName(r,c);
 
-  if(state.mode === "buy" || state.mode === "special-buy") return finishPurchase(r,c);
-  if(state.mode === "teleport") return finishTeleport(r,c);
+  if(state.mode === "buy" || state.mode === "special-buy"){
+    if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type:"purchase",piece:state.pendingPiece,specialId:state.pendingSpecialId,r,c});return;}
+    return finishPurchase(r,c);
+  }
+  if(state.mode === "teleport"){
+    if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type:"teleport",selected:state.selected,r,c});return;}
+    return finishTeleport(r,c);
+  }
 
   const isLegal=state.legalTargets.some(x=>x.r===r&&x.c===c);
-  if(state.selected && isLegal) return makeMove(state.selected.r,state.selected.c,r,c);
+  if(state.selected && isLegal){
+    if(window.multiplayer?.role==="guest"&&state.turn==="b"){
+      window.multiplayer.sendAction({type:"move",from:sqName(state.selected.r,state.selected.c),to:sqName(r,c)});
+      return;
+    }
+    return makeMove(state.selected.r,state.selected.c,r,c);
+  }
 
   state.selected={r,c}; state.legalTargets=[];
   if(p && p.color===state.turn && !current().moveUsed){
@@ -827,7 +937,7 @@ function makeMove(fr,fc,tr,tc){
     state.lastMove={fr,fc,tr,tc,color:state.turn};
     state.selected={r:tr,c:tc}; state.legalTargets=[];
     if(captured.type==="k"||(captured.specialId&&isCountsAsKingDef(specialDef(captured.specialId))))finishGame(state.turn,`${captured.color==="w"?"백":"흑"} 킹 포획`);
-    evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),uci,mover:state.turn,revision,moveId,moveLogEl,info:{capture:true,check:isKingInCheck(enemyColor(),state.board),capturedValue:piecePrice(captured),movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
+    evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),uci,mover:state.turn,revision,moveId,moveLogEl,square:{r:tr,c:tc},info:{capture:true,check:isKingInCheck(enemyColor(),state.board),capturedValue:piecePrice(captured),movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
     render();
     if(state.gameOver)return;
     return;
@@ -835,7 +945,7 @@ function makeMove(fr,fc,tr,tc){
   if(moving.type==="p" && (tr===0||tr===7)){ state.board[tr][tc]={...state.board[tr][tc],type:"q"}; log("폰 승급 → 퀸!","gold"); }
   visitSquare(tr,tc,state.turn);
   state.lastMove={fr,fc,tr,tc,color:state.turn};
-  evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),uci,mover:state.turn,revision,moveId,moveLogEl,info:{capture:false,check:isKingInCheck(enemyColor(),state.board),capturedValue:0,movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
+  evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),uci,mover:state.turn,revision,moveId,moveLogEl,square:{r:tr,c:tc},info:{capture:false,check:isKingInCheck(enemyColor(),state.board),capturedValue:0,movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
   state.selected={r:tr,c:tc}; state.legalTargets=[];
   checkBankruptcy(); render();
 }
@@ -1141,20 +1251,54 @@ function annotateMoveLog(context,symbol){
   if(!context.moveLogEl||!symbol)return;
   if(!context.moveLogEl.textContent.endsWith(` ${symbol}`))context.moveLogEl.textContent+=` ${symbol}`;
 }
-function showMoveGradeEffect(label){
+const MOVE_GRADE_VFX={
+  brilliant:{className:"brilliant",title:"BRILLIANT",symbol:"!!",duration:1800,particles:20,defaultBonus:350,variants:["sunburst","slash","crown"]},
+  best:{className:"best",title:"BEST MOVE",symbol:"",duration:1400,particles:9,defaultBonus:160,variants:["ripple","sweep"]},
+  excellent:{className:"excellent",title:"EXCELLENT",symbol:"",duration:1100,particles:5,defaultBonus:0,variants:["sweep"]},
+  good:{className:"good",title:"GOOD",symbol:"",duration:900,particles:3,defaultBonus:60,variants:["pulse"]},
+  inaccuracy:{className:"inaccuracy",title:"INACCURACY",symbol:"?!",duration:850,particles:0,defaultBonus:0,variants:["wobble"]},
+  mistake:{className:"mistake",title:"MISTAKE",symbol:"?",duration:1000,particles:0,defaultBonus:0,variants:["drop"]},
+  blunder:{className:"blunder",title:"BLUNDER",symbol:"??",duration:1200,particles:0,defaultBonus:0,variants:["impact"]},
+  unrated:{className:"unrated",title:"UNRATED",symbol:"",duration:850,particles:0,defaultBonus:0,variants:["scan"]}
+};
+function vfxGradeKey(grade){
+  const value=String(grade||"").toLowerCase();
+  if(value==="great"||value==="best")return "best";
+  if(value==="excellent")return "excellent";
+  if(value==="brilliant")return "brilliant";
+  return MOVE_GRADE_VFX[value]?value:"unrated";
+}
+function vfxTargetPosition(square){
+  if(!square)return null;
+  const r=typeof square.r==="number"?square.r:typeof square.tr==="number"?square.tr:8-Number(String(square).slice(1));
+  const c=typeof square.c==="number"?square.c:typeof square.tc==="number"?square.tc:FILES.indexOf(String(square).slice(0,1));
+  const el=document.querySelector(`.square[data-r="${r}"][data-c="${c}"]`);
+  if(!el)return null;
+  const rect=el.getBoundingClientRect();
+  return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+}
+function showMoveGradeEffect({grade,bonus=0,square=null,moveId=null}={}){
   const overlay=document.getElementById("moveGradeOverlay");
   if(!overlay)return;
-  const brilliant=label==="Brilliant";
-  const best=["Great","Best","Excellent"].includes(label);
-  if(!brilliant&&!best)return;
-  overlay.className=`move-grade-overlay ${brilliant?"brilliant":"best"}`;
-  overlay.innerHTML=`<span class="grade-text">${brilliant?"Brilliant !!":"BEST!"}</span>`;
+  const key=vfxGradeKey(grade),config=MOVE_GRADE_VFX[key];
+  const variant=config.variants[Math.floor(Math.random()*config.variants.length)];
+  const target=vfxTargetPosition(square);
+  clearTimeout(overlay._hideTimer);
+  overlay._vfxToken=(overlay._vfxToken||0)+1;
+  overlay._vfxMoveId=moveId;
+  overlay.className=`move-grade-overlay cinematic grade-${config.className} variant-${variant}`;
   overlay.setAttribute("aria-hidden","false");
+  const targetStyle=target?`style="--target-x:${target.x}px;--target-y:${target.y}px"`:"";
+  const particles=Array.from({length:Math.min(24,Math.max(0,config.particles))},(_,index)=>{
+    const angle=Math.random()*Math.PI*2, distance=70+Math.random()*230;
+    const x=Math.cos(angle)*distance,y=Math.sin(angle)*distance,delay=Math.random()*.18,rotate=Math.random()*360,scale=.5+Math.random()*.9;
+    return `<i class="vfx-particle" style="--x:${x}px;--y:${y}px;--delay:${delay}s;--rotate:${rotate}deg;--scale:${scale};--index:${index}"></i>`;
+  }).join("");
+  overlay.innerHTML=`<div class="vfx-backdrop"></div><div class="vfx-target" ${targetStyle}><span class="vfx-ring"></span><span class="vfx-ring"></span></div><div class="vfx-streaks"></div><div class="vfx-particles">${particles}</div><div class="vfx-copy"><b class="vfx-symbol">${config.symbol}</b><strong class="vfx-title">${config.title}</strong>${Number(bonus)>0?`<span class="vfx-bonus">+$${Math.round(Number(bonus)).toLocaleString("ko-KR")}</span>`:""}</div>`;
   void overlay.offsetWidth;
   overlay.classList.add("show");
-  const duration=brilliant?1700:1400;
-  clearTimeout(overlay._hideTimer);
-  overlay._hideTimer=setTimeout(()=>{overlay.className="move-grade-overlay";overlay.innerHTML="";overlay.setAttribute("aria-hidden","true");},duration);
+  const token=overlay._vfxToken;
+  overlay._hideTimer=setTimeout(()=>{if(overlay._vfxToken!==token)return;overlay.className="move-grade-overlay";overlay.innerHTML="";overlay.setAttribute("aria-hidden","true");},config.duration);
 }
 function stockfishMaterial(board){
   const value={w:0,b:0};
@@ -1245,7 +1389,7 @@ async function evaluateMoveWithStockfish(context){
     if(!context.bonusEligible)result.bonus=0;
     debugStockfishMoveEval({beforeFen:beforePosition.fen,playerUci,stockfishBestmove,bestmoveMatch,rawBestScore:beforeResult.score,rawPlayedScore:playedResult.score,rootSideBefore,rootSidePlayed,normalizedBestScore:before,normalizedPlayedScore:after,moverColor:context.mover,bestScoreMoverPOV:before,playedScoreMoverPOV:after,centipawnLoss:context.centipawnLoss,movingPiece:stockfishPieceLabel(movingPiece),capturedPiece:stockfishPieceLabel(capturedPiece),materialBefore,materialAfter,confidence:context.confidence,analysisValid:true,invalidReason:null,standardLegal,bonusEligible:context.bonusEligible,classification:grade.label,bonus:result.bonus});
     if(grade.label==="Brilliant")playSound("brilliant");
-    showMoveGradeEffect(grade.label);
+    showMoveGradeEffect({grade:grade.label,bonus:result.bonus,square:context.square,moveId:context.moveId});
     annotateMoveLog(context,`${grade.label}${grade.annotation?` ${grade.annotation}`:""}`);
     if(!result.bonus){
       log(`Stockfish 판정: ${result.label} · ${stockfishPositionAdapter.confidenceLabel(context.confidence)}`);
@@ -1301,6 +1445,7 @@ function render(){
   }
   renderMaturities();renderStocks();renderAnnotations();
   document.getElementById("endTurnBtn").disabled=state.gameOver;
+  if(window.multiplayer?.role==="host")window.multiplayer.sendState(serializeGameState());
 }
 function renderMaturities(){
   const p=current();const items=[];
