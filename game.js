@@ -243,6 +243,14 @@ function applyGameState(snapshot){
   state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();return true;
 }
 window.serializeGameState=serializeGameState;window.applyGameState=applyGameState;
+function multiplayerOwnsColor(color){
+  const role=window.multiplayer?.role;
+  if(role==="host")return color==="w";
+  if(role==="guest")return color==="b";
+  return true;
+}
+function multiplayerOwnsSquare(square){return Boolean(square&&multiplayerOwnsColor(state.board[square.r]?.[square.c]?.color));}
+function rejectRemoteTurn(){log("상대 턴에는 행동할 수 없어.","bad");render();}
 window.handleMultiplayerAction=function(action){
   if(window.multiplayer?.role!=="host"||!action||state.turn!=="b")return;
   if(action.type==="endTurn")return endTurn();
@@ -252,9 +260,11 @@ window.handleMultiplayerAction=function(action){
     return finishPurchase(action.r,action.c);
   }
   if(action.type==="teleport"){
+    if(!multiplayerOwnsSquare(action.selected))return;
     state.selected=action.selected;return finishTeleport(action.r,action.c);
   }
   if(["job","salary","deposit","venture","insurance","promote","buyProperty","sellPiece","stockBuy","stockSell"].includes(action.type)){
+    if(action.selected&&!multiplayerOwnsSquare(action.selected))return;
     if(action.selected){state.selected=action.selected;}
     if(action.type==="job")return doJob();
     if(action.type==="salary")return raiseSalary();
@@ -271,7 +281,10 @@ window.handleMultiplayerAction=function(action){
     }
   }
   if(action.type!=="move")return;
-  const from=fromName(action.from),to=fromName(action.to),legal=legalMovesFor(from.r,from.c).some(cell=>cell.r===to.r&&cell.c===to.c);
+  const from=fromName(action.from),to=fromName(action.to),moving=from&&to?state.board[from.r]?.[from.c]:null;
+  if(!from||!to)return;
+  if(!moving||moving.color!=="b")return log("흑 기물만 조작할 수 있어.","bad");
+  const legal=legalMovesFor(from.r,from.c).some(cell=>cell.r===to.r&&cell.c===to.c);
   if(!legal)return log("온라인 상대의 불법 이동 요청을 거부했어.","bad");
   makeMove(from.r,from.c,to.r,to.c);
 };
@@ -597,7 +610,7 @@ function renderAnnotations(){
 function dragStartSquare(e,r,c){
   if(state.gameOver || state.mode || current().moveUsed) return e.preventDefault();
   const p=state.board[r][c];
-  if(!p || p.color!==state.turn) return e.preventDefault();
+  if(!p || p.color!==state.turn || !multiplayerOwnsColor(p.color)) return e.preventDefault();
   state.dragFrom={r,c}; state.selected={r,c}; state.legalTargets=legalMovesFor(r,c,true);
   e.currentTarget.classList.add("dragging");
   e.dataTransfer.effectAllowed="move";
@@ -608,6 +621,9 @@ function dropSquare(e,r,c){
   if(!state.dragFrom) return;
   e.preventDefault();
   const from=state.dragFrom;
+  if(!multiplayerOwnsSquare(from)||state.turn!==(window.multiplayer?.role==="guest"?"b":window.multiplayer?.role==="host"?"w":state.turn)){
+    state.dragFrom=null;rejectRemoteTurn();return;
+  }
   const legal=state.legalTargets.some(x=>x.r===r&&x.c===c);
   state.justDragged=Date.now();
   state.dragFrom=null;
@@ -701,25 +717,29 @@ function clickSquare(r,c){
   const key=sqName(r,c);
 
   if(state.mode === "buy" || state.mode === "special-buy"){
+    if(window.multiplayer?.role==="guest"&&state.turn!=="b")return rejectRemoteTurn();
     if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type:"purchase",piece:state.pendingPiece,specialId:state.pendingSpecialId,r,c});return;}
     return finishPurchase(r,c);
   }
   if(state.mode === "teleport"){
+    if(window.multiplayer?.role==="guest"&&(state.turn!=="b"||!multiplayerOwnsSquare(state.selected)))return rejectRemoteTurn();
     if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type:"teleport",selected:state.selected,r,c});return;}
     return finishTeleport(r,c);
   }
 
   const isLegal=state.legalTargets.some(x=>x.r===r&&x.c===c);
   if(state.selected && isLegal){
-    if(window.multiplayer?.role==="guest"&&state.turn==="b"){
+    if(window.multiplayer?.role==="guest"&&state.turn==="b"&&multiplayerOwnsSquare(state.selected)){
       window.multiplayer.sendAction({type:"move",from:sqName(state.selected.r,state.selected.c),to:sqName(r,c)});
       return;
     }
+    if(window.multiplayer?.role==="guest"||window.multiplayer?.role==="host"&&!multiplayerOwnsSquare(state.selected))return rejectRemoteTurn();
     return makeMove(state.selected.r,state.selected.c,r,c);
   }
 
+  if(p&&!multiplayerOwnsColor(p.color))return rejectRemoteTurn();
   state.selected={r,c}; state.legalTargets=[];
-  if(p && p.color===state.turn && !current().moveUsed){
+  if(p && p.color===state.turn && multiplayerOwnsColor(p.color) && !current().moveUsed){
     playSound("select");
     state.legalTargets=legalMovesFor(r,c,true);
   }
@@ -1411,7 +1431,7 @@ function render(){
     if((state.mode==="buy"||state.mode==="special-buy")&&homeZone(state.turn,r)&&!p)el.classList.add("buy-target");
     if(state.mode==="teleport"&&!p)el.classList.add("teleport-target");
     if(isKingLike(p) && isKingInCheck(p.color,state.board)) el.classList.add("in-check");
-    el.draggable=!!(p && p.color===state.turn && !current().moveUsed && !state.mode && (!p.purchaseLocked||p.active));
+    el.draggable=!!(p && p.color===state.turn && multiplayerOwnsColor(p.color) && !current().moveUsed && !state.mode && (!p.purchaseLocked||p.active));
     let html="";
     if(p) html+=p.specialId?pieceVisual(p):pieceImgTag(p.color+p.type,"piece",`${p.color}${p.type}`);
     if(state.visits[key])html+=`<span class="visit-badge">${state.visits[key]}</span>`;
