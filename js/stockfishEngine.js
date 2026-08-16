@@ -1,81 +1,68 @@
 (function(){
   "use strict";
-  class StockfishEngine {
-    constructor(){this.worker=null;this.ready=false;this.status="idle";this.statusHandler=null;this.pending=null;this.requestSerial=0;this.initPromise=null;}
+  const DEBUG_STOCKFISH=true;
+  class StockfishEngine{
+    constructor(){this.worker=null;this.ready=false;this.status="idle";this.statusHandler=null;this.pending=null;this.waiters=[];this.requestSerial=0;this.initPromise=null;this.queue=Promise.resolve();}
     setStatusHandler(handler){this.statusHandler=handler;this.emit(this.status);return this;}
     emit(status,detail=""){this.status=status;this.statusHandler?.({status,detail});}
+    debug(direction,line){if(DEBUG_STOCKFISH)console.log(`[SF ${direction}] ${line}`);}
+    send(command){if(!this.worker)throw new Error("Stockfish worker unavailable");this.debug(">>",command);this.worker.postMessage(command);}
+    waitForLine(predicate,timeout=5000){return new Promise((resolve,reject)=>{const waiter={predicate,resolve,reject,timer:null};waiter.timer=setTimeout(()=>{this.waiters=this.waiters.filter(item=>item!==waiter);reject(new Error("Stockfish UCI response timeout"));},timeout);this.waiters.push(waiter);});}
+    async sendAndWait(command,predicate,timeout=5000){const response=this.waitForLine(predicate,timeout);this.send(command);return response;}
+    waitForReady(timeout=5000){return this.sendAndWait("isready",line=>line==="readyok",timeout);}
+    dispatchLine(rawLine){
+      const line=String(rawLine||"").trim();if(!line)return;
+      this.debug("<<",line);
+      for(const waiter of this.waiters.slice()){
+        let matched=false;try{matched=Boolean(waiter.predicate(line));}catch(_){ }
+        if(matched){clearTimeout(waiter.timer);this.waiters=this.waiters.filter(item=>item!==waiter);waiter.resolve(line);}
+      }
+      const request=this.pending;if(!request)return;
+      const depth=line.match(/\bdepth\s+(\d+)/);if(depth)request.depth=Number(depth[1]);
+      const cp=line.match(/\bscore\s+cp\s+(-?\d+)/);if(cp)request.score={type:"cp",value:Number(cp[1])};
+      const mate=line.match(/\bscore\s+mate\s+(-?\d+)/);if(mate)request.score={type:"mate",value:Number(mate[1])};
+      const bestmove=line.match(/(?:^|\s)bestmove\s+(\S+)/);
+      if(bestmove){
+        const best=bestmove[1]||null;
+        this.finishRequest({bestmove:best,depth:request.depth||0,score:request.score,valid:Boolean(best&&best!=="(none)"&&(request.depth||0)>0),invalidReason:best==="(none)"?"bestmove (none)":(request.depth||0)<=0?"depth <= 0":null});
+      }
+    }
+    finishRequest(result){const request=this.pending;if(!request)return;this.pending=null;clearTimeout(request.timeout);this.emit("ready");request.resolve(result);}
+    rejectRequest(error){const request=this.pending;if(!request)return;this.pending=null;clearTimeout(request.timeout);request.reject(error);}
+    attachWorker(worker){worker.onmessage=e=>String(e.data||"").split(/\r?\n/).forEach(line=>this.dispatchLine(line));worker.onerror=e=>this.fail(new Error(e.message||"Stockfish worker error"));worker.onmessageerror=()=>this.fail(new Error("Stockfish worker message error"));}
     async init(){
-      if(this.ready)return this;
-      if(this.initPromise)return this.initPromise;
-      this.initPromise=new Promise((resolve,reject)=>{
-        try{
-          this.emit("loading");
-          const workerUrl = new URL(
-            "./engine/stockfish-18-lite-single.js",
-            document.baseURI
-          );
-          const worker = new Worker(workerUrl.href);
-          let uciOk=false,readyOk=false;
-          const timer=setTimeout(()=>{if(!readyOk){const error=new Error("Stockfish ready timeout");this.fail(error);reject(error);}},12000);
-          worker.onmessage=e=>{
-            // Stockfish.js는 여러 UCI 응답을 한 메시지에 묶어 보낼 수 있다.
-            const lines=String(e.data||"").split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
-            lines.forEach(line=>{
-              if(line.includes("uciok")){uciOk=true;worker.postMessage("isready");}
-              if(line.includes("readyok") && !readyOk){
-                readyOk=true;
-                clearTimeout(timer);
-                this.ready=true;
-                this.emit("ready");
-                resolve(this);
-              }
-              if(this.pending)this.handlePendingLine(line);
-            });
-          };
-          worker.onerror=e=>{clearTimeout(timer);const error=new Error(e.message||"Stockfish worker error");this.fail(error);reject(error);};
-          worker.onmessageerror=()=>{clearTimeout(timer);const error=new Error("Stockfish worker message error");this.fail(error);reject(error);};
-          worker.postMessage("uci");
-        }catch(error){this.fail(error);reject(error);}
-      }).catch(error=>{this.initPromise=null;throw error;});
+      if(this.ready)return this;if(this.initPromise)return this.initPromise;
+      this.initPromise=(async()=>{
+        this.emit("loading");
+        const worker=new Worker(new URL("./engine/stockfish-18-lite-single.js",document.baseURI));this.worker=worker;this.attachWorker(worker);
+        await this.sendAndWait("uci",line=>line==="uciok",12000);await this.waitForReady(12000);
+        this.ready=true;this.emit("ready");return this;
+      })().catch(error=>{this.initPromise=null;this.fail(error);throw error;});
       return this.initPromise;
     }
-    fail(error){this.ready=false;this.worker?.terminate();this.worker=null;this.emit("error",error?.message||"Stockfish load failed");}
-    send(command){if(this.worker)this.worker.postMessage(command);}
-    handlePendingLine(line){
-      const request=this.pending;
-      if(!request)return;
-      const clean=String(line||"").trim();
-      const depth=clean.match(/\bdepth\s+(\d+)/);if(depth)request.depth=Number(depth[1]);
-      const cp=clean.match(/\bscore\s+cp\s+(-?\d+)/);if(cp)request.score={type:"cp",value:Number(cp[1])};
-      const mate=clean.match(/\bscore\s+mate\s+(-?\d+)/);if(mate)request.score={type:"mate",value:Number(mate[1])};
-      const bestmove=clean.match(/(?:^|\s)bestmove\s+(\S+)/);
-      if(bestmove){const best=bestmove[1]||null;clearTimeout(request.timeout);this.pending=null;this.emit("ready");request.resolve({bestmove:best,depth:request.depth||0,score:request.score});}
+    fail(error){const reason=error instanceof Error?error:new Error(String(error||"Stockfish load failed"));this.ready=false;this.rejectRequest(reason);for(const waiter of this.waiters){clearTimeout(waiter.timer);waiter.reject(reason);}this.waiters=[];this.worker?.terminate();this.worker=null;this.emit("error",reason.message);}
+    async stop(reason=new Error("Analysis stopped")){
+      if(this.pending)this.rejectRequest(reason);if(!this.worker)return;
+      try{this.send("stop");}catch(_){return;}
+      try{await this.waitForReady(5000);}catch(_){ }
+      if(this.ready)this.emit("ready");
     }
-    analyze(fen,options={}){
-      const run=async()=>{
-        await this.init();
-        if(this.pending)this.stop(new Error("Superseded by newer analysis"));
-        const requestId=++this.requestSerial;
-        return new Promise((resolve,reject)=>{
-          this.pending={requestId,resolve,reject,depth:0,score:null};
-          this.emit("analyzing");
-          this.send("ucinewgame");this.send("isready");this.send("position fen "+fen);
-          const command=options.movetime?`go movetime ${Math.max(1,Number(options.movetime))}`:`go depth ${Math.max(1,Number(options.depth||12))}`;
-          this.send(command);
-          this.pending.cancel=()=>{reject(new Error("Analysis cancelled"));};
-          this.pending.timeout=setTimeout(()=>{if(this.pending?.requestId===requestId){this.stop(new Error("Analysis timeout"));}},Math.max(5000,Number(options.timeout||12000)));
-        });
-      };
-      return run();
+    async runAnalysis(fen,options={}){
+      await this.init();if(this.pending)await this.stop(new Error("Superseded by newer analysis"));
+      this.emit("analyzing");this.send("ucinewgame");await this.waitForReady(Number(options.syncTimeout||5000));
+      const moves=Array.isArray(options.moves)&&options.moves.length?` moves ${options.moves.join(" ")}`:"";
+      this.send("position fen "+fen+moves);
+      const requestId=++this.requestSerial,timeoutMs=Math.max(5000,Number(options.timeout||12000));
+      return new Promise((resolve,reject)=>{
+        const request={requestId,resolve,reject,depth:0,score:null,timeout:null};this.pending=request;
+        request.timeout=setTimeout(async()=>{if(this.pending!==request)return;const error=new Error("Stockfish analysis timeout");this.rejectRequest(error);try{this.send("stop");}catch(_){ }try{await this.waitForReady(5000);}catch(_){ }if(this.ready)this.emit("ready");},timeoutMs);
+        const command=options.movetime?`go movetime ${Math.max(1,Number(options.movetime))}`:`go depth ${Math.max(1,Number(options.depth||12))}`;this.send(command);
+      });
     }
+    analyze(fen,options={}){const run=this.queue.then(()=>this.runAnalysis(fen,options));this.queue=run.catch(()=>{});return run;}
     getBestMove(fen,options={}){return this.analyze(fen,options);}
-    stop(reason=new Error("Analysis stopped")){
-      if(this.pending){const request=this.pending;this.pending=null;clearTimeout(request.timeout);request.cancel?.();request.reject(reason);}
-      this.send("stop");if(this.ready)this.emit("ready");
-    }
-    destroy(){this.stop();this.worker?.terminate();this.worker=null;this.ready=false;this.initPromise=null;this.emit("destroyed");}
+    destroy(){const reason=new Error("Stockfish destroyed");this.rejectRequest(reason);for(const waiter of this.waiters){clearTimeout(waiter.timer);waiter.reject(reason);}this.waiters=[];this.worker?.postMessage("stop");this.worker?.terminate();this.worker=null;this.ready=false;this.initPromise=null;this.emit("destroyed");}
     restart(){this.destroy();return this.init();}
   }
-  window.StockfishEngine=StockfishEngine;
-  window.stockfish=new StockfishEngine();
+  window.StockfishEngine=StockfishEngine;window.stockfish=new StockfishEngine();
 })();

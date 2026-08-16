@@ -10,6 +10,7 @@ const PIECES = {
   k: {name:"킹", price:null, captureReward:0, tax:0, purchasable:false}
 };
 const PIECE_SCORE = {p:1,n:3,b:3,r:5,q:9,k:0};
+const DEBUG_STOCKFISH = true;
 const CFG = {
   startMoney: 1200,
   startSalary: 220,
@@ -143,7 +144,7 @@ const state = {
   newsEventSerial:0,
   headlineTimer:null,
   clock:{w:CLOCK_INITIAL_SECONDS,b:CLOCK_INITIAL_SECONDS},
-  audio:{sound:true,bgm:true,bgmPlayer:null,bgmIndex:0,started:false},
+  audio:{sound:true,bgm:true,bgmPlayer:null,bgmIndex:0,bgmLastIndex:-1,started:false},
   turnTimeLeft:CLOCK_INITIAL_SECONDS,
   turnTimerId:null,
   drawOffer:null,
@@ -165,8 +166,10 @@ function playSound(name){
 const BGM_TRACKS=["bgm_market_01.ogg","bgm_market_02.ogg","bgm_strategy_01.ogg"];
 function playNextBgm(){
   if(!state.audio.bgm)return;
-  const track=BGM_TRACKS[state.audio.bgmIndex%BGM_TRACKS.length];
-  state.audio.bgmIndex=(state.audio.bgmIndex+1)%BGM_TRACKS.length;
+  const choices=BGM_TRACKS.map((_,index)=>index).filter(index=>index!==state.audio.bgmLastIndex);
+  const index=choices[Math.floor(Math.random()*choices.length)];
+  state.audio.bgmLastIndex=index;
+  const track=BGM_TRACKS[index];
   const audio=new Audio(`assets/sounds/${track}`);
   audio.volume=.18;
   audio.onended=()=>{if(state.audio.bgmPlayer===audio){state.audio.bgmPlayer=null;playNextBgm();}};
@@ -565,6 +568,9 @@ function bindControls(){
   document.getElementById("stockBuyBtn").onclick=()=>tradeStock(true);
   document.getElementById("stockSellBtn").onclick=()=>tradeStock(false);
   document.getElementById("drawBtn").onclick=requestDraw;
+  ["cancelModeBtn","clearLogBtn","salaryBtn","depositBtn","ventureBtn","promoteBtn","teleportBtn","insuranceBtn","sellPieceBtn","stockBuyBtn","stockSellBtn"].forEach(id=>{
+    document.getElementById(id)?.addEventListener("click",()=>playSound("click"));
+  });
   document.getElementById("pieceInfoClose").onclick=closePieceInfo;
   document.getElementById("pieceInfoModal").addEventListener("click",e=>{if(e.target.id==="pieceInfoModal")closePieceInfo();});
   document.addEventListener("keydown",e=>{if(e.key==="Escape")closePieceInfo();});
@@ -853,14 +859,14 @@ function buyProperty(){
   if(state.properties[key]) return log("이미 주인이 있는 칸이야.","bad");
   const price=propertyPrice(key);
   if(!payAndAP(price,1,"부동산 매입")) return;
-  state.properties[key]=state.turn; log(`${key} 매입 -${fmt(price)} (현재 통행료 ${fmt(propertyToll(key))})`,`gold`);render();renderTileInfo(key);
+  state.properties[key]=state.turn; log(`${key} 매입 -${fmt(price)} (현재 통행료 ${fmt(propertyToll(key))})`,`gold`);playSound("buy");render();renderTileInfo(key);
 }
 function renderTileInfo(key){
   const owner=state.properties[key]; const visits=state.visits[key]||0;
   document.getElementById("tileInfo").innerHTML=`<b>${key}</b> · 방문 ${visits}회 · 가치 ${fmt(propertyPrice(key))} · 통행료 ${fmt(propertyToll(key))}<br>소유자: ${owner?(owner==="w"?"백":"흑"):"없음"}`;
 }
 
-function doJob(){ if(!canEconomy()||!useAP(1,"알바"))return;current().money+=CFG.jobPay;log(`알바 완료 +${fmt(CFG.jobPay)} (킹이 알바 뛰는 세계관)`,`good`);render(); }
+function doJob(){ if(!canEconomy()||!useAP(1,"알바"))return;current().money+=CFG.jobPay;playSound("click");log(`알바 완료 +${fmt(CFG.jobPay)} (킹이 알바 뛰는 세계관)`,`good`);render(); }
 function salaryCost(p=current()){ return Math.round(CFG.salaryBaseCost*Math.pow(CFG.salaryUpgradeMultiplier,p.salaryLevel)); }
 function raiseSalary(){
   if(!canEconomy())return; const p=current(),cost=salaryCost(p);
@@ -984,10 +990,11 @@ function cycleHeadline(){
 
 function endTurn(timedOut=false){
   if(state.gameOver)return;
+  playSound(timedOut?"error":"click");
   const mover=state.turn, next=enemyColor(mover);
   stopTurnTimer();
   state.turn=next;state.turnNo++;
-  const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;
+  const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;playSound("select");
   p.money+=p.salary;const tax=countTax(state.turn);p.money-=tax;
   log(`${state.turn==="w"?"백":"흑"} 턴 시작: 월급 +${fmt(p.salary)}, 세금 -${fmt(tax)}`,tax?"":"good");
   processMaturities(state.turn);runTurnAbilities(state.turn);moveMarket();
@@ -1033,6 +1040,7 @@ function stopTurnTimer(){
 }
 function requestDraw(){
   if(state.gameOver)return;
+  playSound("select");
   const side=state.turn==="w"?"백":"흑";
   if(!state.drawOffer){
     state.drawOffer=state.turn;
@@ -1068,24 +1076,56 @@ function initStockfish(){
     log(`Stockfish 초기화 실패: ${error?.message||"Worker 응답 없음"}`,"bad");
   });
 }
-function scoreForMover(score,sideToMove,mover){
-  if(!score)return null;
-  const sign=sideToMove===mover?1:-1;
-  if(score.type==="mate")return sign*(score.value>0?100000-Math.abs(score.value)*100:-100000+Math.abs(score.value)*100);
-  return sign*Number(score.value||0);
+window.stockfishTestPositions=[
+  {name:"명백한 최선수 후보",fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",move:"e2e4"},
+  {name:"평범한 수 후보",fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",move:"d2d3"},
+  {name:"폰 공짜 희생 후보",fen:"4k3/8/8/3q4/8/8/4P3/4K3 w - - 0 1",move:"e2e3"},
+  {name:"룩 공짜 희생 후보",fen:"4k3/8/8/8/q7/8/8/R3K3 w - - 0 1",move:"a1a2"},
+  {name:"퀸 공짜 희생 후보",fen:"3rk3/8/8/8/8/8/8/3QK3 w - - 0 1",move:"d1d2"}
+];
+window.runStockfishTestPositions=async function(){
+  const rows=[];
+  for(const test of window.stockfishTestPositions){
+    const best=await stockfish.analyze(test.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000});
+    const played=await stockfish.analyze(test.fen,{moves:[test.move],depth:ENGINE_EVAL_CONFIG.depth,timeout:20000});
+    const bestScore=normalizeScoreToColor(best.score,"w","w"),playedScore=normalizeScoreToColor(played.score,"b","w");
+    rows.push({name:test.name,move:test.move,bestmove:best.bestmove,bestmoveMatch:String(best.bestmove).toLowerCase()===test.move,analysisValid:Boolean(best.valid&&played.valid),bestScoreMoverPOV:bestScore,playedScoreMoverPOV:playedScore,centipawnLoss:bestScore===null||playedScore===null?null:Math.max(0,bestScore-playedScore)});
+  }
+  console.table(rows);return rows;
+};
+function normalizeScoreToColor(score,rootSide,targetColor){
+  if(!score||!rootSide||!targetColor)return null;
+  const raw=score.type==="mate"?(score.value>0?100000-Math.abs(score.value)*100:-100000+Math.abs(score.value)*100):Number(score.value);
+  if(!Number.isFinite(raw))return null;
+  return rootSide===targetColor?raw:-raw;
+}
+window.normalizeScoreToColor=normalizeScoreToColor;
+function scoreForMover(score,rootSide,mover){return normalizeScoreToColor(score,rootSide,mover);}
+function standardLegalUci(board,mover,uci){
+  const text=String(uci||"").toLowerCase();
+  if(!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(text))return false;
+  const from=fromName(text.slice(0,2)),to=fromName(text.slice(2,4));
+  const moving=board?.[from.r]?.[from.c],target=board?.[to.r]?.[to.c];
+  if(!moving||moving.color!==mover||target?.color===mover||target?.type==="k")return false;
+  if(!pseudoMoves(from.r,from.c,board,false).some(cell=>cell.r===to.r&&cell.c===to.c))return false;
+  const hasPromotion=Boolean(text.slice(4));
+  if(moving.type==="p"&&((to.r===0||to.r===7)!==hasPromotion))return false;
+  if(moving.type!=="p"&&hasPromotion)return false;
+  const next=cloneBoard(board);next[to.r][to.c]={...moving,moved:true};next[from.r][from.c]=null;
+  return !isKingInCheck(mover,next);
 }
 function classifyMove(context,before,after){
   const loss=Math.max(0,before-after),gain=after-before,best=after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
   if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum)return {key:"low-confidence",bonus:0,label:"분석 신뢰도 낮음"};
   if(isBrilliantMove({context,before,after,loss,gain,best}))return {key:"brilliant",bonus:ENGINE_EVAL_CONFIG.brilliantBonus,label:"!! 탁월수"};
-  if(best||loss<=ENGINE_EVAL_CONFIG.bestMaxLoss)return {key:"best",bonus:ENGINE_EVAL_CONFIG.bestBonus,label:"! 최선수"};
+  if(best)return {key:"best",bonus:ENGINE_EVAL_CONFIG.bestBonus,label:"! 최선수"};
+  if(loss<=ENGINE_EVAL_CONFIG.bestMaxLoss)return {key:"good",bonus:ENGINE_EVAL_CONFIG.goodBonus,label:"좋은 수"};
   if(loss<=ENGINE_EVAL_CONFIG.goodMaxLoss)return {key:"good",bonus:ENGINE_EVAL_CONFIG.goodBonus,label:"✓ 좋은 수"};
   return {key:"normal",bonus:0,label:"일반 수"};
 }
 function isBrilliantMove({context,after,gain,best}){
-  const tactical=context.info.capture||context.info.check;
-  const sacrifice=context.info.capturedValue<context.info.movingValue&&gain>=0;
-  return context.confidence>=.75&&(best||gain>=ENGINE_EVAL_CONFIG.tacticalGain)&&(tactical||sacrifice);
+  const sacrifice=context.moverMaterialDelta<0&&context.movingMaterial>context.capturedMaterial&&!context.freeCapture;
+  return context.confidence>=.75&&(best||context.centipawnLoss<=10)&&sacrifice&&gain>=ENGINE_EVAL_CONFIG.tacticalGain;
 }
 function stockfishGrade(result,context,loss){
   const best=String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
@@ -1101,25 +1141,111 @@ function annotateMoveLog(context,symbol){
   if(!context.moveLogEl||!symbol)return;
   if(!context.moveLogEl.textContent.endsWith(` ${symbol}`))context.moveLogEl.textContent+=` ${symbol}`;
 }
+function showMoveGradeEffect(label){
+  const overlay=document.getElementById("moveGradeOverlay");
+  if(!overlay)return;
+  const brilliant=label==="Brilliant";
+  const best=["Great","Best","Excellent"].includes(label);
+  if(!brilliant&&!best)return;
+  overlay.className=`move-grade-overlay ${brilliant?"brilliant":"best"}`;
+  overlay.innerHTML=`<span class="grade-text">${brilliant?"Brilliant !!":"BEST!"}</span>`;
+  overlay.setAttribute("aria-hidden","false");
+  void overlay.offsetWidth;
+  overlay.classList.add("show");
+  const duration=brilliant?1700:1400;
+  clearTimeout(overlay._hideTimer);
+  overlay._hideTimer=setTimeout(()=>{overlay.className="move-grade-overlay";overlay.innerHTML="";overlay.setAttribute("aria-hidden","true");},duration);
+}
+function stockfishMaterial(board){
+  const value={w:0,b:0};
+  for(const row of board)for(const p of row)if(p?.color)value[p.color]+=PIECE_SCORE[p.type]||0;
+  return value;
+}
+function stockfishPieceLabel(p){
+  if(!p)return "none";
+  return p.specialId?`${p.specialId}(${p.type})`:p.type;
+}
+function debugStockfishMoveEval(data){
+  if(!DEBUG_STOCKFISH)return;
+  const materialBefore=data.materialBefore||{w:null,b:null};
+  const materialAfter=data.materialAfter||{w:null,b:null};
+  const materialDelta={w:materialBefore.w===null||materialAfter.w===null?null:materialAfter.w-materialBefore.w,b:materialBefore.b===null||materialAfter.b===null?null:materialAfter.b-materialBefore.b};
+  console.log("========== STOCKFISH MOVE EVAL ==========");
+  console.log("beforeFen",data.beforeFen);
+  console.log("playerUci",data.playerUci);
+  console.log("stockfishBestmove",data.stockfishBestmove);
+  console.log("bestmoveMatch",data.bestmoveMatch);
+  console.log("rawBestScore",data.rawBestScore);
+  console.log("rawPlayedScore",data.rawPlayedScore);
+  console.log("rootSideBefore",data.rootSideBefore);
+  console.log("rootSidePlayed",data.rootSidePlayed);
+  console.log("normalizedBestScore",data.normalizedBestScore);
+  console.log("normalizedPlayedScore",data.normalizedPlayedScore);
+  console.log("moverColor",data.moverColor);
+  console.log("bestScoreMoverPOV",data.bestScoreMoverPOV);
+  console.log("playedScoreMoverPOV",data.playedScoreMoverPOV);
+  console.log("centipawnLoss",data.centipawnLoss);
+  console.log("movingPiece",data.movingPiece);
+  console.log("capturedPiece",data.capturedPiece);
+  console.log("materialBefore",materialBefore);
+  console.log("materialAfter",materialAfter);
+  console.log("materialDelta",materialDelta);
+  console.log("confidence",data.confidence);
+  console.log("analysisValid",data.analysisValid);
+  console.log("invalidReason",data.invalidReason);
+  console.log("standardLegal",data.standardLegal);
+  console.log("bonusEligible",data.bonusEligible);
+  console.log("classification",data.classification);
+  console.log("bonus",data.bonus);
+  console.log("==========================================");
+  if(data.bestmoveMatch&&materialDelta[data.moverColor]<0&&data.centipawnLoss<=0){
+    console.warn("[SF WARNING] 큰 기물 손실인데 BEST 경로로 판정됨",data);
+  }
+}
 async function evaluateMoveWithStockfish(context){
-  if(!context.info.movingIsStandard||!window.stockfishPositionAdapter){annotateMoveLog(context,"?");return;}
+  const playerUci=String(context.uci||"").toLowerCase();
+  const from=fromName(playerUci.slice(0,2)),to=fromName(playerUci.slice(2,4));
+  const movingPiece=context.beforeBoard?.[from.r]?.[from.c]||null;
+  const capturedPiece=context.beforeBoard?.[to.r]?.[to.c]||null;
+  const materialBefore=context.beforeBoard?stockfishMaterial(context.beforeBoard):null;
+  const materialAfter=context.afterBoard?stockfishMaterial(context.afterBoard):null;
+  const standardLegal=standardLegalUci(context.beforeBoard,context.mover,playerUci);
+  const debugSkipped=(classification,extra={})=>debugStockfishMoveEval({beforeFen:"unavailable",playerUci,stockfishBestmove:null,bestmoveMatch:false,rawBestScore:null,rawPlayedScore:null,rootSideBefore:context.mover,rootSidePlayed:enemyColor(context.mover),normalizedBestScore:null,normalizedPlayedScore:null,moverColor:context.mover,bestScoreMoverPOV:null,playedScoreMoverPOV:null,centipawnLoss:null,movingPiece:stockfishPieceLabel(movingPiece),capturedPiece:stockfishPieceLabel(capturedPiece),materialBefore,materialAfter,confidence:context.confidence??null,analysisValid:false,invalidReason:classification,standardLegal:extra.standardLegal??standardLegal,bonusEligible:false,classification:"Unrated",bonus:0});
+  if(!context.info.movingIsStandard||!window.stockfishPositionAdapter){debugSkipped("skipped: non-standard or adapter unavailable");annotateMoveLog(context,"?");return;}
   const beforePosition=stockfishPositionAdapter.fromBoard(context.beforeBoard,context.mover);
   const afterPosition=stockfishPositionAdapter.fromBoard(context.afterBoard,enemyColor(context.mover));
   context.confidence=Math.min(beforePosition.confidence,afterPosition.confidence);
-  if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum){log(`Stockfish 분석 신뢰도 낮음 (${stockfishPositionAdapter.confidenceLabel(context.confidence)}) · 보너스 없음`);return;}
+  if(!standardLegal){debugSkipped("playerUci is not standard-legal",{standardLegal:false});annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외 · 표준 체스 불법 수","bad");return;}
+  if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum){debugSkipped("skipped: low confidence");log(`Stockfish 분석 신뢰도 낮음 (${stockfishPositionAdapter.confidenceLabel(context.confidence)}) · 보너스 없음`);return;}
   try{
-    const beforeResult=await stockfish.analyze(beforePosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{annotateMoveLog(context,"?");log(`Stockfish 분석 실패: ${error?.message||"Worker 응답 없음"}`,"bad");return null;});
+    const beforeResult=await stockfish.analyze(beforePosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: before analysis (${error?.message||"unknown"})`);annotateMoveLog(context,"?");log(`Stockfish 분석 실패: ${error?.message||"Worker 응답 없음"}`,"bad");return null;});
     if(!beforeResult)return;
-    if(state.engineRevision!==context.revision)return;
-    const afterResult=await stockfish.analyze(afterPosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{annotateMoveLog(context,"?");log(`Stockfish 분석 실패: ${error?.message||"Worker 응답 없음"}`,"bad");return null;});
-    if(!afterResult)return;
-    if(state.engineRevision!==context.revision||state.engineAwarded.has(context.moveId))return;
-    const before=scoreForMover(beforeResult.score,context.mover,context.mover),after=scoreForMover(afterResult.score,enemyColor(context.mover),context.mover);
-    if(before===null||after===null){log("Stockfish 점수를 받지 못해 수 판정을 건너뜀","bad");return;}
-    context.bestmove=beforeResult.bestmove;const result=classifyMove(context,before,after);
+    if(!beforeResult.valid){debugSkipped(beforeResult.invalidReason||"invalid before analysis");annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외","bad");return;}
+    if(state.engineRevision!==context.revision){debugSkipped("skipped: stale move revision");return;}
+    const playedResult=await stockfish.analyze(beforePosition.fen,{moves:[context.uci],depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: played analysis (${error?.message||"unknown"})`);annotateMoveLog(context,"?");log(`Stockfish 분석 실패: ${error?.message||"Worker 응답 없음"}`,"bad");return null;});
+    if(!playedResult)return;
+    if(!playedResult.valid){debugSkipped(playedResult.invalidReason||"invalid played analysis");annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외","bad");return;}
+    if(state.engineRevision!==context.revision||state.engineAwarded.has(context.moveId)){debugSkipped("skipped: stale or already awarded");return;}
+    const rootSideBefore=context.mover,rootSidePlayed=enemyColor(context.mover);
+    const before=normalizeScoreToColor(beforeResult.score,rootSideBefore,context.mover),after=normalizeScoreToColor(playedResult.score,rootSidePlayed,context.mover);
+    if(before===null||after===null){debugSkipped("invalid normalized score");annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외","bad");return;}
+    context.bestmove=beforeResult.bestmove;
+    context.centipawnLoss=Math.max(0,before-after);
+    context.movingMaterial=PIECE_SCORE[movingPiece?.type]||0;
+    context.capturedMaterial=PIECE_SCORE[capturedPiece?.type]||0;
+    context.moverMaterialDelta=materialAfter[context.mover]-materialBefore[context.mover];
+    context.freeCapture=materialAfter[enemyColor(context.mover)]<materialBefore[enemyColor(context.mover)]&&context.moverMaterialDelta>=0;
+    const nonKingPieces=Object.values(materialBefore).reduce((sum,value)=>sum+value,0);
+    context.bonusEligible=nonKingPieces>=3||context.info.capture||context.info.check;
+    const result=classifyMove(context,before,after);
     const grade=stockfishGrade(result,context,Math.max(0,before-after));
     result.label=grade.label;
+    const stockfishBestmove=String(context.bestmove||"").toLowerCase();
+    const bestmoveMatch=Boolean(playerUci&&stockfishBestmove===playerUci);
+    if(!context.bonusEligible)result.bonus=0;
+    debugStockfishMoveEval({beforeFen:beforePosition.fen,playerUci,stockfishBestmove,bestmoveMatch,rawBestScore:beforeResult.score,rawPlayedScore:playedResult.score,rootSideBefore,rootSidePlayed,normalizedBestScore:before,normalizedPlayedScore:after,moverColor:context.mover,bestScoreMoverPOV:before,playedScoreMoverPOV:after,centipawnLoss:context.centipawnLoss,movingPiece:stockfishPieceLabel(movingPiece),capturedPiece:stockfishPieceLabel(capturedPiece),materialBefore,materialAfter,confidence:context.confidence,analysisValid:true,invalidReason:null,standardLegal,bonusEligible:context.bonusEligible,classification:grade.label,bonus:result.bonus});
     if(grade.label==="Brilliant")playSound("brilliant");
+    showMoveGradeEffect(grade.label);
     annotateMoveLog(context,`${grade.label}${grade.annotation?` ${grade.annotation}`:""}`);
     if(!result.bonus){
       log(`Stockfish 판정: ${result.label} · ${stockfishPositionAdapter.confidenceLabel(context.confidence)}`);
@@ -1127,7 +1253,7 @@ async function evaluateMoveWithStockfish(context){
     }
     state.engineAwarded.add(context.moveId);state.players[context.mover].money+=result.bonus;
     log(`${result.label} — +${fmt(result.bonus)} · 신뢰도 ${stockfishPositionAdapter.confidenceLabel(context.confidence)}`,"gold");render();
-  }catch(_){/* 엔진 실패는 게임 플레이에 영향을 주지 않음 */}
+  }catch(error){debugSkipped(`failed: evaluation pipeline (${error?.message||"unknown"})`);}
 }
 
 function render(){
