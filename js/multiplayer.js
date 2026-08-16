@@ -2,7 +2,7 @@
   "use strict";
   let savedUrl="";try{savedUrl=localStorage.getItem("capitalistChessMultiplayerUrl")||"";}catch(_){ }
   const isLocalHost=["localhost","127.0.0.1","::1"].includes(location.hostname);
-  const SERVER_URL=window.MULTIPLAYER_SERVER_URL||(savedUrl||"wss://capitalist-chess.onrender.com");
+  const SERVER_URL=window.MULTIPLAYER_SERVER_URL||(savedUrl||(isLocalHost?"ws://localhost:8080":"wss://capitalist-chess.onrender.com"));
   const SESSION_KEY="capitalistChessMultiplayerSession";
   class MultiplayerClient{
     constructor(){
