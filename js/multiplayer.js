@@ -1,11 +1,17 @@
 (function(){
   "use strict";
-  const DEFAULT_URL=window.MULTIPLAYER_SERVER_URL||((location.protocol==="https:"?"wss://":"ws://")+location.hostname+":8080");
+  let savedUrl="";try{savedUrl=localStorage.getItem("capitalistChessMultiplayerUrl")||"";}catch(_){ }
+  const isLocalHost=["localhost","127.0.0.1","::1"].includes(location.hostname);
+  const DEFAULT_URL=window.MULTIPLAYER_SERVER_URL||savedUrl||(isLocalHost?"ws://localhost:8080":"");
   class MultiplayerClient{
     constructor(){this.socket=null;this.role=null;this.code="";this.token="";this.status="offline";this.stateRevision=0;this.onStatus=null;this.onAction=null;this.onState=null;}
     setStatus(status,detail=""){this.status=status;this.onStatus?.({status,detail});this.renderStatus(status,detail);}
     connect(){
       if(this.socket?.readyState===1)return Promise.resolve();
+      if(!DEFAULT_URL){
+        const error=new Error("배포 사이트에는 WebSocket 서버 주소가 설정되지 않았어.");
+        this.setStatus("error",error.message);return Promise.reject(error);
+      }
       return new Promise((resolve,reject)=>{
         const socket=new WebSocket(DEFAULT_URL);this.socket=socket;
         socket.onopen=()=>{this.setStatus("connected");resolve();};
@@ -47,4 +53,5 @@
     }
   }
   window.MultiplayerClient=MultiplayerClient;window.multiplayer=new MultiplayerClient();
+  window.setMultiplayerServerUrl=url=>{try{localStorage.setItem("capitalistChessMultiplayerUrl",String(url||""));}catch(_){ }location.reload();};
 })();
