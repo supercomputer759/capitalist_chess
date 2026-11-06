@@ -14,8 +14,9 @@ function send(ws,message){if(ws?.readyState===1)ws.send(JSON.stringify(message))
 function closeRoom(room){
   if(room.graceTimer)clearTimeout(room.graceTimer);
   rooms.delete(room.code);
-  for(const token of [room.hostToken,room.guestToken])if(token)tokens.delete(token);
+  for(const token of [room.hostToken,room.guestToken,...room.spectators.keys()])if(token)tokens.delete(token);
 }
+function broadcast(room,message,includeSpectators=true){send(room.host,message);send(room.guest,message);if(includeSpectators)for(const ws of room.spectators.values())send(ws,message);}
 function scheduleHostGrace(room){
   if(room.graceTimer)clearTimeout(room.graceTimer);
   room.graceTimer=setTimeout(()=>{if(!room.host){send(room.guest,{type:"roomClosed",reason:"hostTimeout"});closeRoom(room);}},RECONNECT_GRACE_MS);
@@ -23,6 +24,7 @@ function scheduleHostGrace(room){
 function markDisconnected(room,role,ws){
   if(role==="host"&&room.host===ws){room.host=null;room.hostDisconnectedAt=Date.now();send(room.guest,{type:"hostDisconnected",graceMs:RECONNECT_GRACE_MS});scheduleHostGrace(room);}
   if(role==="guest"&&room.guest===ws){room.guest=null;room.guestDisconnectedAt=Date.now();send(room.host,{type:"guestDisconnected",graceMs:RECONNECT_GRACE_MS});if(room.guestGraceTimer)clearTimeout(room.guestGraceTimer);room.guestGraceTimer=setTimeout(()=>{if(!room.guest&&room.guestToken){tokens.delete(room.guestToken);room.guestToken=null;}},RECONNECT_GRACE_MS);}
+  if(role==="spectator"&&ws.token){room.spectators.delete(ws.token);tokens.delete(ws.token);broadcast(room,{type:"spectatorCount",count:room.spectators.size},false);}
 }
 function attachSocket(ws,room,role,token){
   ws.room=room;ws.role=role;ws.token=token;tokens.set(token,{room,role});
@@ -30,7 +32,7 @@ function attachSocket(ws,room,role,token){
 function handleMessage(ws,message){
   if(!message||typeof message.type!=="string")return;
   if(message.type==="create"){
-    const code=roomCode(),token=crypto.randomUUID(),room={code,host:ws,guest:null,hostToken:token,guestToken:null,createdAt:Date.now(),lastActivity:Date.now(),state:message.state||null,revision:Number(message.revision||0),graceTimer:null};
+    const code=roomCode(),token=crypto.randomUUID(),room={code,host:ws,guest:null,hostToken:token,guestToken:null,spectators:new Map(),createdAt:Date.now(),lastActivity:Date.now(),state:message.state||null,revision:Number(message.revision||0),graceTimer:null};
     rooms.set(code,room);attachSocket(ws,room,"host",token);return send(ws,{type:"roomCreated",code,token,role:"host",revision:room.revision});
   }
   if(message.type==="join"){
@@ -40,10 +42,19 @@ function handleMessage(ws,message){
     const token=crypto.randomUUID();if(room.guestGraceTimer)clearTimeout(room.guestGraceTimer);room.guestGraceTimer=null;room.guest=ws;room.guestToken=token;room.guestDisconnectedAt=null;room.lastActivity=Date.now();attachSocket(ws,room,"guest",token);
     send(ws,{type:"joined",code,token,role:"guest",state:room.state,revision:room.revision});send(room.host,{type:"guestJoined"});return;
   }
+  if(message.type==="watch"){
+    const code=String(message.code||"").toUpperCase(),room=rooms.get(code);
+    if(!room)return send(ws,{type:"error",message:"Room not found"});
+    const token=crypto.randomUUID();room.spectators.set(token,ws);room.lastActivity=Date.now();attachSocket(ws,room,"spectator",token);
+    send(ws,{type:"watched",code,token,role:"spectator",state:room.state,revision:room.revision});broadcast(room,{type:"spectatorCount",count:room.spectators.size},false);return;
+  }
   if(message.type==="reconnect"){
     const code=String(message.code||"").toUpperCase(),session=tokens.get(String(message.token||"")),room=rooms.get(code);
     if(!room||!session||session.room!==room)return send(ws,{type:"error",message:"Reconnect session not found"});
     const role=session.role,slot=role==="host"?"host":"guest";
+    if(role==="spectator"){
+      room.spectators.set(message.token,ws);attachSocket(ws,room,"spectator",message.token);room.lastActivity=Date.now();return send(ws,{type:"reconnected",code,token:message.token,role,state:room.state,revision:room.revision,lastRevision:Number(message.lastRevision||0)});
+    }
     if(room[slot])return send(ws,{type:"error",message:"Player slot is already connected"});
     attachSocket(ws,room,role,message.token);room.lastActivity=Date.now();room[slot]=ws;
     if(role==="host"){if(room.graceTimer)clearTimeout(room.graceTimer);room.graceTimer=null;room.hostDisconnectedAt=null;send(room.guest,{type:"hostReconnected"});}
@@ -55,22 +66,23 @@ function handleMessage(ws,message){
   room.lastActivity=Date.now();
   if(message.type==="heartbeat")return send(ws,{type:"heartbeatAck",at:Date.now()});
   if(message.type==="leave"){
-    const role=session.role;ws.explicitLeave=true;tokens.delete(ws.token);if(role==="host"){send(room.guest,{type:"hostLeft"});closeRoom(room);}else{room.guest=null;room.guestToken=null;send(room.host,{type:"guestLeft"});}return ws.close();
+    const role=session.role;ws.explicitLeave=true;tokens.delete(ws.token);if(role==="host"){send(room.guest,{type:"hostLeft"});broadcast(room,{type:"roomClosed"});closeRoom(room);}else if(role==="guest"){room.guest=null;room.guestToken=null;send(room.host,{type:"guestLeft"});}else{room.spectators.delete(ws.token);broadcast(room,{type:"spectatorCount",count:room.spectators.size},false);}return ws.close();
   }
   if(message.type==="closeRoom"&&session.role==="host"){
-    send(room.host,{type:"roomClosed"});send(room.guest,{type:"roomClosed"});
+    broadcast(room,{type:"roomClosed"});
     if(room.host)room.host.explicitLeave=true;if(room.guest)room.guest.explicitLeave=true;
     room.host?.close();room.guest?.close();closeRoom(room);return;
   }
   if(message.type==="state"&&session.role==="host"){
-    room.state=message.state;room.revision=Number(message.revision||room.revision);return send(room.guest,{type:"state",revision:room.revision,state:room.state});
+    room.state=message.state;room.revision=Number(message.revision||room.revision);return broadcast(room,{type:"state",revision:room.revision,state:room.state});
   }
+  if(message.type==="orbitalStrikeResult"&&session.role==="host")return broadcast(room,{type:"orbitalStrikeResult",result:message.result});
   if(message.type==="action"&&session.role==="guest")return send(room.host,{type:"action",action:message.action,token:ws.token});
   if(message.type==="chat"){
     const text=String(message.text||"").trim().slice(0,200);
     if(!text)return;
     const chat={type:"chat",from:session.role,text,at:Date.now()};
-    send(room.host,chat);send(room.guest,chat);return;
+    return broadcast(room,chat);
   }
   if(message.type==="sync")return send(ws,{type:"state",revision:room.revision,state:room.state});
 }

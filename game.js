@@ -29,11 +29,13 @@ const CFG = {
   sellRatio: 0.60,
   brilliantBonus: 350,
   bestBonus: 160,
-  promoteCost: 600,
+  promoteCost: 1500,
   teleportCost: 800,
-  insuranceCost: 1200
+  insuranceCost: 1200,
+  orbitalStrike: {enabled:true,price:50000,apCost:10,radius:1}
 };
 const CLOCK_INITIAL_SECONDS = 900;
+let orbitalTargetCancel=null;
 const ENGINE_EVAL_CONFIG = {
   depth: 10,
   confidenceMinimum: 0.6,
@@ -42,7 +44,9 @@ const ENGINE_EVAL_CONFIG = {
   goodBonus: 60,
   brilliantMaxLoss: 25,
   bestMaxLoss: 45,
-  goodMaxLoss: 90,
+  interestingMaxLoss: 60,
+  inaccuracyMaxLoss: 150,
+  mistakeMaxLoss: 300,
   tacticalGain: 80
 };
 
@@ -117,6 +121,10 @@ function makePlayer(color) {
 }
 
 const state = {
+  started:false,
+  stockfishEnabled:true,
+  specialEnabled:true,
+  orbitalSettings:{...CFG.orbitalStrike},
   board: Array.from({length:8},()=>Array(8).fill(null)),
   turn:"w",
   turnNo:1,
@@ -219,6 +227,10 @@ window.gameState=state;
 function serializeGameState(){
   return JSON.parse(JSON.stringify({
     schemaVersion:1,
+    started:state.started,
+    stockfishEnabled:state.stockfishEnabled,
+    specialEnabled:state.specialEnabled,
+    orbitalSettings:state.orbitalSettings,
     revision:state.engineRevision,
     board:state.board,
     turn:state.turn,
@@ -239,23 +251,31 @@ function serializeGameState(){
 }
 function applyGameState(snapshot){
   if(!snapshot||snapshot.schemaVersion!==1)return false;
+  const wasStarted=state.started;
+  state.started=Boolean(snapshot.started);state.stockfishEnabled=snapshot.stockfishEnabled!==false;state.specialEnabled=snapshot.specialEnabled!==false;if(snapshot.orbitalSettings){state.orbitalSettings={...CFG.orbitalStrike,...snapshot.orbitalSettings};Object.assign(CFG.orbitalStrike,state.orbitalSettings);}document.querySelector(".shop-panel")?.classList.toggle("special-disabled",!state.specialEnabled);
   state.board=snapshot.board||state.board;state.turn=snapshot.turn||state.turn;state.turnNo=Number(snapshot.turnNo||state.turnNo);
   state.players=snapshot.players||state.players;state.visits=snapshot.visits||{};state.properties=snapshot.properties||{};state.lastMove=snapshot.lastMove||null;
   const wasGameOver=state.gameOver;state.gameOver=Boolean(snapshot.gameOver);state.gameResult=snapshot.gameResult||null;state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
-  state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();if(state.gameOver&&!wasGameOver&&state.gameResult)showGameResult();return true;
+  state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();if(state.started&&!wasStarted){document.getElementById("lobbyScreen")?.classList.add("hidden");startTurnTimer();}if(state.gameOver&&!wasGameOver&&state.gameResult)showGameResult();return true;
 }
 window.serializeGameState=serializeGameState;window.applyGameState=applyGameState;
+function multiplayerRole(){
+  const mp=window.multiplayer;
+  return mp?.socket?.readyState===1&&mp.code&&mp.token?mp.role:null;
+}
 function multiplayerOwnsColor(color){
-  const role=window.multiplayer?.role;
+  const role=multiplayerRole();
   if(role==="host")return color==="w";
   if(role==="guest")return color==="b";
+  if(role==="spectator")return false;
   return true;
 }
 function multiplayerOwnsSquare(square){return Boolean(square&&multiplayerOwnsColor(state.board[square.r]?.[square.c]?.color));}
 function rejectRemoteTurn(){log("상대 턴에는 행동할 수 없어.","bad");render();}
 window.handleMultiplayerAction=function(action){
-  if(window.multiplayer?.role!=="host"||!action)return;
+  if(multiplayerRole()!=="host"||!action)return;
   if(action.type==="resign")return finishGame("w","흑 기권");
+  if(action.type==="orbitalStrike")return executeOrbitalStrike(action.target);
   if(state.turn!=="b")return;
   if(action.type==="endTurn")return endTurn();
   if(action.type==="draw")return requestDraw();
@@ -294,7 +314,8 @@ window.handleMultiplayerAction=function(action){
 };
 function runMultiplayerAction(type,local,payload=()=>({})){
   return (...args)=>{
-    if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type,...payload(...args)});return;}
+    if(multiplayerRole()==="guest"){window.multiplayer.sendAction({type,...payload(...args)});return;}
+    if(multiplayerRole()==="spectator"){log("관전자는 게임 행동을 할 수 없어.","bad");return;}
     local(...args);
   };
 }
@@ -367,6 +388,23 @@ window.cheat.addClock=(color,seconds)=>{
   state.clock[normalized]=Math.max(0,state.clock[normalized]+(Number(seconds)||0));renderTurnTimer();
 };
 
+function setupLobby(){
+  const lobby=document.getElementById("lobbyScreen"),single=document.getElementById("singleModeBtn"),multi=document.getElementById("multiModeBtn"),hubTitle=document.querySelector(".lobby-hub-head h2"),internet=document.getElementById("lobbyInternetStatus"),connection=document.getElementById("lobbyConnectionStatus"),roomStatus=document.getElementById("lobbyRoomStatus"),tools=document.getElementById("lobbyMultiplayerTools"),start=document.getElementById("lobbyStartBtn");
+  if(!lobby||!single||!multi||!start)return;
+  let mode="single";
+  const update=()=>{const isMulti=mode==="multi";single.classList.toggle("active",!isMulti);multi.classList.toggle("active",isMulti);if(hubTitle)hubTitle.textContent=isMulti?"멀티플레이 허브":"싱글플레이 허브";if(connection)connection.textContent=isMulti?(multiplayerRole()?`온라인 방 · ${multiplayerRole()==="host"?"Host":"Guest"}`:"방 연결 대기") : "로컬 게임";tools?.classList.toggle("hidden",!isMulti);start.textContent=isMulti?"멀티플레이 시작":"싱글플레이 시작";start.disabled=isMulti&&!multiplayerRole();document.querySelectorAll(".lobby-settings input,.lobby-rules input").forEach(input=>input.disabled=isMulti&&multiplayerRole()==="guest");};
+  const apply=()=>{const hostRole=multiplayerRole();if(mode==="multi"&&hostRole==="guest")return;CFG.startMoney=Math.max(0,Number(document.getElementById("lobbyMoney")?.value)||1200);CFG.startSalary=Math.max(0,Number(document.getElementById("lobbySalary")?.value)||220);CFG.maxAP=Math.max(1,Number(document.getElementById("lobbyAP")?.value)||3);const seconds=Math.max(60,Math.round((Number(document.getElementById("lobbyClock")?.value)||15)*60));state.stockfishEnabled=document.getElementById("lobbyStockfish")?.checked!==false;state.specialEnabled=document.getElementById("lobbySpecialPieces")?.checked!==false;CFG.orbitalStrike.enabled=document.getElementById("lobbyOrbitalEnabled")?.checked!==false;CFG.orbitalStrike.price=Math.max(0,Number(document.getElementById("lobbyOrbitalPrice")?.value)||50000);CFG.orbitalStrike.apCost=Math.max(1,Number(document.getElementById("lobbyOrbitalAP")?.value)||10);state.orbitalSettings={...CFG.orbitalStrike};for(const color of ["w","b"]){state.players[color].money=CFG.startMoney;state.players[color].salary=CFG.startSalary;state.players[color].salaryLevel=0;state.players[color].ap=CFG.maxAP;}state.clock={w:seconds,b:seconds};state.turnTimeLeft=seconds;document.querySelector(".shop-panel")?.classList.toggle("special-disabled",!state.specialEnabled);};
+  const begin=()=>{const role=multiplayerRole();if(mode==="multi"&&!role)return;if(mode!=="multi"&&!role||mode==="multi"&&!['guest','spectator'].includes(role))apply();state.started=true;lobby.classList.add("hidden");render();startTurnTimer();if(role==="host")window.multiplayer.sendState(serializeGameState());};
+  single.onclick=()=>{mode="single";renderInternet("offline");update();};multi.onclick=()=>{mode="multi";renderInternet(window.multiplayer?.status||"offline");update();};start.onclick=begin;
+  document.getElementById("lobbyCreateRoomBtn")?.addEventListener("click",()=>window.multiplayer?.createRoom().catch(error=>{if(connection)connection.textContent=error.message;}));
+  document.getElementById("lobbyJoinRoomBtn")?.addEventListener("click",()=>window.multiplayer?.joinRoom(document.getElementById("lobbyRoomCodeInput")?.value).catch(error=>{if(connection)connection.textContent=error.message;}));
+  document.getElementById("lobbyWatchRoomBtn")?.addEventListener("click",()=>window.multiplayer?.watchRoom(document.getElementById("lobbyRoomCodeInput")?.value).catch(error=>{if(connection)connection.textContent=error.message;}));
+  const renderInternet=(status)=>{if(!internet)return;internet.textContent=mode!=="multi"?"인터넷: 로컬 모드":({offline:"인터넷: 오프라인",booting:"인터넷: 서버 부팅 중…",connecting:"인터넷: 서버에 연결 중…",reconnecting:"인터넷: 재연결 중…",connected:"인터넷: 연결됨",room:"인터넷: 연결됨",waiting:"인터넷: 연결됨",error:"인터넷: 연결 오류"}[status]||`인터넷: ${status||"확인 중"}`);};
+  if(window.multiplayer)window.multiplayer.onStatus=({status,detail})=>{renderInternet(status);if(connection&&mode==="multi")connection.textContent=detail||window.multiplayer.status;if(roomStatus&&mode==="multi"&&!detail)roomStatus.textContent=window.multiplayer.status;update();};
+  renderInternet(window.multiplayer?.status||"offline");
+  update();
+}
+
 async function init() {
   const specialData=await SpecialPieces.load();
   const status=document.getElementById("specialLoadStatus");
@@ -388,7 +426,7 @@ async function init() {
   log("게임 시작. 양측 킹 1개 + $1,500.","gold");
   initStockfish();
   render();
-  startTurnTimer();
+  setupLobby();
   showHeadline(0, true);
   state.headlineTimer=setInterval(cycleHeadline, 3600);
 }
@@ -635,7 +673,8 @@ function dropSquare(e,r,c){
   if(!state.dragFrom) return;
   e.preventDefault();
   const from=state.dragFrom;
-  if(!multiplayerOwnsSquare(from)||state.turn!==(window.multiplayer?.role==="guest"?"b":window.multiplayer?.role==="host"?"w":state.turn)){
+  const role=multiplayerRole();
+  if(!multiplayerOwnsSquare(from)||state.turn!==(role==="guest"?"b":role==="host"?"w":state.turn)){
     state.dragFrom=null;rejectRemoteTurn();return;
   }
   const legal=state.legalTargets.some(x=>x.r===r&&x.c===c);
@@ -691,6 +730,7 @@ function bindControls(){
   document.getElementById("promoteBtn").onclick=runMultiplayerAction("promote",instantPromote,()=>({selected:state.selected}));
   document.getElementById("teleportBtn").onclick=startTeleport;
   document.getElementById("insuranceBtn").onclick=runMultiplayerAction("insurance",buyInsurance);
+  document.getElementById("orbitalStrikeBtn").onclick=startOrbitalStrike;
   document.getElementById("buyPropertyBtn").onclick=runMultiplayerAction("buyProperty",buyProperty,()=>({selected:state.selected}));
   document.getElementById("sellPieceBtn").onclick=runMultiplayerAction("sellPiece",sellSelectedPiece,()=>({selected:state.selected}));
   document.getElementById("stockBuyBtn").onclick=runMultiplayerAction("stockBuy",()=>tradeStock(true),()=>({key:document.getElementById("stockSelect")?.value,qty:document.getElementById("stockQty")?.value}));
@@ -721,6 +761,8 @@ function showBoardPieceInfo(r,c){
 
 function clickSquare(r,c){
   if(state.gameOver) return;
+  if(state.mode==="orbital-targeting")return;
+  if(multiplayerRole()==="spectator")return;
   playSound("click");
   if(Date.now()-state.justDragged<180) return;
   if(state.annotations.length || state.annotationPreview){
@@ -733,23 +775,23 @@ function clickSquare(r,c){
   const key=sqName(r,c);
 
   if(state.mode === "buy" || state.mode === "special-buy"){
-    if(window.multiplayer?.role==="guest"&&state.turn!=="b")return rejectRemoteTurn();
-    if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type:"purchase",piece:state.pendingPiece,specialId:state.pendingSpecialId,r,c});return;}
+    if(multiplayerRole()==="guest"&&state.turn!=="b")return rejectRemoteTurn();
+    if(multiplayerRole()==="guest"){window.multiplayer.sendAction({type:"purchase",piece:state.pendingPiece,specialId:state.pendingSpecialId,r,c});return;}
     return finishPurchase(r,c);
   }
   if(state.mode === "teleport"){
-    if(window.multiplayer?.role==="guest"&&(state.turn!=="b"||!multiplayerOwnsSquare(state.selected)))return rejectRemoteTurn();
-    if(window.multiplayer?.role==="guest"){window.multiplayer.sendAction({type:"teleport",selected:state.selected,r,c});return;}
+    if(multiplayerRole()==="guest"&&(state.turn!=="b"||!multiplayerOwnsSquare(state.selected)))return rejectRemoteTurn();
+    if(multiplayerRole()==="guest"){window.multiplayer.sendAction({type:"teleport",selected:state.selected,r,c});return;}
     return finishTeleport(r,c);
   }
 
   const isLegal=state.legalTargets.some(x=>x.r===r&&x.c===c);
   if(state.selected && isLegal){
-    if(window.multiplayer?.role==="guest"&&state.turn==="b"&&multiplayerOwnsSquare(state.selected)){
+    if(multiplayerRole()==="guest"&&state.turn==="b"&&multiplayerOwnsSquare(state.selected)){
       window.multiplayer.sendAction({type:"move",from:sqName(state.selected.r,state.selected.c),to:sqName(r,c)});
       return;
     }
-    if(window.multiplayer?.role==="guest"||window.multiplayer?.role==="host"&&!multiplayerOwnsSquare(state.selected))return rejectRemoteTurn();
+    if(multiplayerRole()==="guest"||multiplayerRole()==="host"&&!multiplayerOwnsSquare(state.selected))return rejectRemoteTurn();
     return makeMove(state.selected.r,state.selected.c,r,c);
   }
 
@@ -765,7 +807,50 @@ function clickSquare(r,c){
 
 function clearMode(){ state.mode=null;state.pendingPiece=null;state.pendingSpecialId=null;state.legalTargets=[];state.selected=null;render(); }
 
+function getOrbitalStrikeSquares(target,settings=CFG.orbitalStrike){
+  const center=typeof target==="string"?fromName(target):target;if(!center)return [];
+  const radius=Math.max(0,Number(settings.radius)||1),squares=[];
+  for(let r=center.r-radius;r<=center.r+radius;r++)for(let c=center.c-radius;c<=center.c+radius;c++)if(inBounds(r,c))squares.push({r,c,key:sqName(r,c)});
+  return squares;
+}
+window.getOrbitalStrikeSquares=getOrbitalStrikeSquares;
+function orbitalStrikeReady(){
+  const cfg=CFG.orbitalStrike,p=current();
+  if(!cfg.enabled||!state.specialEnabled)return {ok:false,reason:"궤도 빔이 비활성화돼 있어."};
+  if(state.gameOver||!state.started)return {ok:false,reason:"게임이 시작되지 않았어."};
+  if(p.money<cfg.price)return {ok:false,reason:`자금 부족 (${fmt(cfg.price)} 필요)`};
+  if(p.ap<cfg.apCost)return {ok:false,reason:`AP 부족 (${cfg.apCost} 필요)`};
+  return {ok:true};
+}
+function startOrbitalStrike(){
+  if(multiplayerRole()==="spectator")return log("관전자는 궤도 빔을 사용할 수 없어.","bad");
+  const ready=orbitalStrikeReady();if(!ready.ok)return log(`ORBITAL BEAM: ${ready.reason}`,"bad");
+  if(!window.OrbitalBeamVfx)return log("궤도 빔 조준 모듈을 불러오지 못했어.","bad");
+  state.mode="orbital-targeting";render();
+  orbitalTargetCancel=window.OrbitalBeamVfx.startTargeting({
+    onConfirm:target=>{orbitalTargetCancel=null;state.mode=null;render();if(multiplayerRole()==="guest")window.multiplayer.sendAction({type:"orbitalStrike",target:target.key});else executeOrbitalStrike(target.key);},
+    onCancel:()=>{orbitalTargetCancel=null;state.mode=null;render();log("궤도 빔 조준을 취소했어.");}
+  });
+}
+function executeOrbitalStrike(targetKey){
+  const ready=orbitalStrikeReady();if(!ready.ok)return log(`ORBITAL BEAM 거부: ${ready.reason}`,"bad");
+  const target=fromName(String(targetKey||""));if(!target)return log("궤도 빔 목표 좌표가 잘못됐어.","bad");
+  const shooter=state.turn,affectedSquares=getOrbitalStrikeSquares(target),destroyedPieces=[];let friendlyDamage=0,enemyDamage=0,whiteKing=false,blackKing=false;
+  current().money-=CFG.orbitalStrike.price;current().ap-=CFG.orbitalStrike.apCost;
+  for(const cell of affectedSquares){const p=state.board[cell.r][cell.c];if(!p)continue;const value=p.type==="k"?0:piecePrice(p);destroyedPieces.push({r:cell.r,c:cell.c,key:cell.key,color:p.color,type:p.type,specialId:p.specialId||null,value});if(p.color===shooter)friendlyDamage+=value;else enemyDamage+=value;if(p.color==="w"&&(p.type==="k"||isKingLike(p)))whiteKing=true;if(p.color==="b"&&(p.type==="k"||isKingLike(p)))blackKing=true;state.board[cell.r][cell.c]=null;}
+  const result={target:targetKey,shooter,affectedSquares,destroyedPieces,friendlyDamage,enemyDamage,kingDestroyed:{w:whiteKing,b:blackKing}};
+  log(`[T${state.turnNo}] ${shooter==="w"?"백":"흑"}이 ORBITAL NUCLEAR BEAM을 발사했습니다.` ,"bad");log(`[T${state.turnNo}] 아군 ${destroyedPieces.filter(p=>p.color===shooter).length}개 / 적군 ${destroyedPieces.filter(p=>p.color!==shooter).length}개 기물이 파괴되었습니다.`);log(`[T${state.turnNo}] 아군 피해액 ${fmt(friendlyDamage)} / 적군 피해액 ${fmt(enemyDamage)}`);
+  if(whiteKing)log(`[T${state.turnNo}] 백 KING이 궤도 타격으로 파괴되었습니다.` ,"bad");if(blackKing)log(`[T${state.turnNo}] 흑 KING이 궤도 타격으로 파괴되었습니다.` ,"bad");
+  state.engineRevision++;state.selected=null;state.legalTargets=[];render();window.OrbitalBeamVfx?.play(result);
+  if(multiplayerRole()==="host"){window.multiplayer.sendOrbitalStrikeResult?.(result);window.multiplayer.sendState(serializeGameState());}
+  if(whiteKing&&blackKing)return finishGame(null,"양쪽 KING이 궤도 타격으로 동시에 파괴되어 무승부");
+  if(whiteKing||blackKing)return finishGame(whiteKing?"b":"w","ORBITAL NUCLEAR BEAM이 킹을 파괴했어");
+}
+window.handleOrbitalStrikeResult=result=>{if(multiplayerRole()!=="host")window.OrbitalBeamVfx?.play(result);};
+window.debugOrbitalStrike=target=>executeOrbitalStrike(target);
+
 function startPurchase(type){
+  if(multiplayerRole()==="spectator")return log("관전자는 구매할 수 없어.","bad");
   if(!canEconomy()) return;
   if(current().ap<1) return log("기물 구매: AP 부족","bad");
   if(current().money<PIECES[type].price) return log(`기물 구매: ${fmt(PIECES[type].price)} 필요`,`bad`);
@@ -773,6 +858,7 @@ function startPurchase(type){
   log(`${PIECES[type].name} 구매 위치를 선택해.`,"gold"); render();
 }
 function startSpecialPurchase(id){
+  if(multiplayerRole()==="spectator")return log("관전자는 구매할 수 없어.","bad");
   const def=specialDef(id),stock=state.specialStock[id]||0;
   if(!def)return log("특수기물 데이터를 찾을 수 없어.","bad");
   if(stock<=0)return log(`${def.name}: 품절`,"bad");
@@ -1127,7 +1213,9 @@ function instantPromote(){
   const {r,c}=state.selected,p=state.board[r][c];
   if(!p||p.color!==state.turn||p.type!=="p")return log("선택한 게 네 폰이 아님.","bad");
   if(!payAndAP(CFG.promoteCost,1,"즉시 승급"))return;
-  state.board[r][c]={...p,type:"q"};log(`${sqName(r,c)} 폰 즉시승급 → 퀸 -${fmt(CFG.promoteCost)}`,"gold");render();
+  const restrictions=p.purchaseLocked?{}:{purchaseLocked:true,active:false,activationTurn:state.turnNo+1,attackLockedTurns:3};
+  state.board[r][c]={...p,...restrictions,type:"q"};
+  log(`${sqName(r,c)} 폰 즉시승급 → 퀸 -${fmt(CFG.promoteCost)} · 다음 자기 턴 활성화, 공격 2턴 제한`,"gold");render();
 }
 function startTeleport(){
   if(!canEconomy()||!state.selected)return log("텔레포트할 자기 기물을 선택해.","bad");
@@ -1225,8 +1313,8 @@ function endTurn(timedOut=false){
 }
 function resignGame(){
   if(state.gameOver)return;
-  if(window.multiplayer?.role==="guest")return window.multiplayer.resign();
-  if(window.multiplayer?.role==="host")return finishGame("b","백 기권");
+  if(multiplayerRole()==="guest")return window.multiplayer.resign();
+  if(multiplayerRole()==="host")return finishGame("b","백 기권");
   finishGame(enemyColor(state.turn),`${state.turn==="w"?"백":"흑"} 기권`);
 }
 function finishGame(winner,reason){
@@ -1258,6 +1346,7 @@ function renderTurnTimer(){
   for(const color of ["w","b"]){const el=document.getElementById(color==="w"?"whiteClock":"blackClock");if(el){el.textContent=format(state.clock[color]);el.classList.toggle("warning",state.clock[color]<=10);}}
 }
 function startTurnTimer(){
+  if(!state.started)return;
   stopTurnTimer();
   renderTurnTimer();
   state.turnTimerId=setInterval(()=>{
@@ -1265,7 +1354,7 @@ function startTurnTimer(){
     state.clock[state.turn]=Math.max(0,state.clock[state.turn]-1);
     renderTurnTimer();
     if(state.clock[state.turn]<=0){
-      if(window.multiplayer?.role!=="guest")finishGame(enemyColor(state.turn),`${state.turn==="w"?"백":"흑"} 시간 초과`);
+      if(multiplayerRole()!=="guest")finishGame(enemyColor(state.turn),`${state.turn==="w"?"백":"흑"} 시간 초과`);
       else stopTurnTimer();
     }
   },1000);
@@ -1350,7 +1439,20 @@ function standardLegalUci(board,mover,uci){
   const next=cloneBoard(board);next[to.r][to.c]={...moving,moved:true};next[from.r][from.c]=null;
   return !isKingInCheck(mover,next);
 }
-function classifyMove(context,before,after){
+function standardLegalMoveCount(board,color){
+  let count=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board?.[r]?.[c];if(!p||p.color!==color)continue;
+    for(const target of pseudoMoves(r,c,board,false)){
+      if(board[target.r]?.[target.c]?.type==="k")continue;
+      const next=cloneBoard(board);next[target.r][target.c]={...p,moved:true};next[r][c]=null;
+      if(!isKingInCheck(color,next))count++;
+    }
+  }
+  return count;
+}
+function isForcedMovePosition(board,color){return standardLegalMoveCount(board,color)===1;}
+function legacyClassifyMove(context,before,after){
   const loss=Math.max(0,before-after),gain=after-before,best=after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
   if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum)return {key:"low-confidence",bonus:0,label:"분석 신뢰도 낮음"};
   if(isBrilliantMove({context,before,after,loss,gain,best}))return {key:"brilliant",bonus:ENGINE_EVAL_CONFIG.brilliantBonus,label:"!! 탁월수"};
@@ -1363,7 +1465,7 @@ function isBrilliantMove({context,after,gain,best}){
   const sacrifice=context.moverMaterialDelta<0&&context.movingMaterial>context.capturedMaterial&&!context.freeCapture;
   return context.confidence>=.75&&(best||context.centipawnLoss<=10)&&sacrifice&&gain>=ENGINE_EVAL_CONFIG.tacticalGain;
 }
-function stockfishGrade(result,context,loss){
+function legacyStockfishGrade(result,context,loss){
   const best=String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
   if(result.key==="brilliant")return {label:"Brilliant",annotation:"!!"};
   if(best)return {label:"Great",annotation:"!"};
@@ -1373,19 +1475,38 @@ function stockfishGrade(result,context,loss){
   if(loss<=300)return {label:"Mistake",annotation:"?"};
   return {label:"Blunder",annotation:"??"};
 }
+function classifyMove(context,before,after){
+  const loss=Math.max(0,before-after),gain=after-before,best=after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
+  if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum)return {key:"low-confidence",bonus:0,label:"분석 신뢰도 낮음"};
+  if(isBrilliantMove({context,before,after,loss,gain,best}))return {key:"brilliant",bonus:ENGINE_EVAL_CONFIG.brilliantBonus,label:"!! 탁월수"};
+  if(best)return {key:"great",bonus:ENGINE_EVAL_CONFIG.bestBonus,label:"! 훌륭한 수"};
+  if(loss<=ENGINE_EVAL_CONFIG.interestingMaxLoss)return {key:"interesting",bonus:0,label:"!? 흥미로운 수"};
+  if(loss<=ENGINE_EVAL_CONFIG.inaccuracyMaxLoss)return {key:"inaccuracy",bonus:0,label:"?! 부정확한 수"};
+  if(loss<=ENGINE_EVAL_CONFIG.mistakeMaxLoss)return {key:"mistake",bonus:0,label:"? 실수"};
+  return {key:"blunder",bonus:0,label:"?? 블런더"};
+}
+function stockfishGrade(result,context,loss){
+  if(result.key==="brilliant")return {label:"Brilliant",annotation:"!!"};
+  if(result.key==="great")return {label:"Great",annotation:"!"};
+  if(result.key==="interesting")return {label:"Interesting",annotation:"!?"};
+  if(result.key==="inaccuracy")return {label:"Inaccuracy",annotation:"?!"};
+  if(result.key==="mistake")return {label:"Mistake",annotation:"?"};
+  return {label:"Blunder",annotation:"??"};
+}
 function annotateMoveLog(context,symbol){
   if(!context.moveLogEl||!symbol)return;
   if(!context.moveLogEl.textContent.endsWith(` ${symbol}`))context.moveLogEl.textContent+=` ${symbol}`;
 }
 const MOVE_GRADE_VFX={
-  brilliant:{className:"brilliant",title:"BRILLIANT",symbol:"!!",duration:1800,particles:20,defaultBonus:350,variants:["sunburst","slash","crown"]},
-  best:{className:"best",title:"BEST MOVE",symbol:"",duration:1400,particles:9,defaultBonus:160,variants:["ripple","sweep"]},
+  brilliant:{className:"brilliant",title:"BRILLIANT",symbol:"!!",duration:1800,particles:20,defaultBonus:350,variants:["sunburst","slash","crown","nova","orbit"]},
+  best:{className:"best",title:"BEST MOVE",symbol:"",duration:1400,particles:9,defaultBonus:160,variants:["ripple","sweep","orbit","pulse"]},
+  interesting:{className:"interesting",title:"INTERESTING",symbol:"!?",duration:1000,particles:5,defaultBonus:0,variants:["sweep","fork","orbit"]},
   excellent:{className:"excellent",title:"EXCELLENT",symbol:"",duration:1100,particles:5,defaultBonus:0,variants:["sweep"]},
   good:{className:"good",title:"GOOD",symbol:"",duration:900,particles:3,defaultBonus:60,variants:["pulse"]},
-  inaccuracy:{className:"inaccuracy",title:"INACCURACY",symbol:"?!",duration:850,particles:0,defaultBonus:0,variants:["wobble"]},
-  mistake:{className:"mistake",title:"MISTAKE",symbol:"?",duration:1000,particles:0,defaultBonus:0,variants:["drop"]},
-  blunder:{className:"blunder",title:"BLUNDER",symbol:"??",duration:1200,particles:0,defaultBonus:0,variants:["impact"]},
-  unrated:{className:"unrated",title:"UNRATED",symbol:"",duration:850,particles:0,defaultBonus:0,variants:["scan"]}
+  inaccuracy:{className:"inaccuracy",title:"INACCURACY",symbol:"?!",duration:850,particles:2,defaultBonus:0,variants:["wobble","glitch","flash"]},
+  mistake:{className:"mistake",title:"MISTAKE",symbol:"?",duration:1000,particles:1,defaultBonus:0,variants:["drop","tilt","crack"]},
+  blunder:{className:"blunder",title:"BLUNDER",symbol:"??",duration:1200,particles:2,defaultBonus:0,variants:["impact","quake","vignette"]},
+  unrated:{className:"unrated",title:"UNRATED",symbol:"",duration:850,particles:2,defaultBonus:0,variants:["scan","flicker"]}
 };
 function vfxGradeKey(grade){
   const value=String(grade||"").toLowerCase();
@@ -1473,6 +1594,7 @@ function debugStockfishMoveEval(data){
   }
 }
 async function evaluateMoveWithStockfish(context){
+  if(state.stockfishEnabled===false)return;
   const playerUci=String(context.uci||"").toLowerCase();
   const from=fromName(playerUci.slice(0,2)),to=fromName(playerUci.slice(2,4));
   const movingPiece=context.beforeBoard?.[from.r]?.[from.c]||null;
@@ -1487,6 +1609,11 @@ async function evaluateMoveWithStockfish(context){
   context.confidence=Math.min(beforePosition.confidence,afterPosition.confidence);
   if(!standardLegal){debugSkipped("playerUci is not standard-legal",{standardLegal:false});annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외 · 표준 체스 불법 수","bad");return;}
   if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum){debugSkipped("skipped: low confidence");log(`Stockfish 분석 신뢰도 낮음 (${stockfishPositionAdapter.confidenceLabel(context.confidence)}) · 보너스 없음`);return;}
+  if(isForcedMovePosition(context.beforeBoard,context.mover)){
+    annotateMoveLog(context,"→");
+    log("Stockfish 평가: → 강제수 (유일한 합법 수)","gold");
+    return;
+  }
   try{
     const beforeResult=await stockfish.analyze(beforePosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: before analysis (${error?.message||"unknown"})`);annotateMoveLog(context,"?");log(`Stockfish 분석 실패: ${error?.message||"Worker 응답 없음"}`,"bad");return null;});
     if(!beforeResult)return;
@@ -1569,9 +1696,12 @@ function render(){
     drawBtn.textContent=!state.drawOffer?"무승부 요청":state.drawOffer===state.turn?"요청 취소":"무승부 승인";
     drawBtn.disabled=state.gameOver;
   }
+  const orbitalBtn=document.getElementById("orbitalStrikeBtn"),orbitalStatus=document.getElementById("orbitalStatus"),orbitalReady=orbitalStrikeReady();
+  if(orbitalBtn){orbitalBtn.disabled=!orbitalReady.ok||state.mode==="orbital-targeting"||state.gameOver;orbitalBtn.title=orbitalReady.ok?"궤도 플랫폼 접속":"궤도 빔 사용 불가: "+orbitalReady.reason;}
+  if(orbitalStatus)orbitalStatus.textContent=state.mode==="orbital-targeting"?"조준 중 · 클릭 발사 / ESC·우클릭 취소":orbitalReady.ok?"궤도 플랫폼 접속 가능":orbitalReady.reason;
   renderMaturities();renderStocks();renderAnnotations();
   document.getElementById("endTurnBtn").disabled=state.gameOver;
-  if(window.multiplayer?.role==="host")window.multiplayer.sendState(serializeGameState());
+  if(multiplayerRole()==="host")window.multiplayer.sendState(serializeGameState());
 }
 function renderMaturities(){
   const p=current();const items=[];

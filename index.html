@@ -4,10 +4,36 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg" />
-  <title>자본주의 체스 v0.1.5</title>
+  <title>자본주의 체스</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="lobby-screen" id="lobbyScreen">
+    <div class="lobby-card">
+      <div class="lobby-kicker">CAPITALIST CHESS</div>
+      <h1>게임 로비</h1>
+      <p class="lobby-subtitle">게임 모드와 규칙을 정한 뒤 게임을 시작해.</p>
+      <div class="lobby-mode-grid">
+        <button class="lobby-mode active" id="singleModeBtn" type="button"><strong>싱글플레이</strong><small>혼자 양쪽 진영을 조작</small></button>
+        <button class="lobby-mode" id="multiModeBtn" type="button"><strong>멀티플레이</strong><small>Host + Room Code</small></button>
+      </div>
+      <section class="lobby-hub" id="lobbyHub">
+        <div class="lobby-hub-head"><h2>싱글플레이 허브</h2><div class="lobby-statuses"><span id="lobbyInternetStatus">인터넷: 로컬 모드</span><span id="lobbyConnectionStatus">방: 로컬 게임</span></div></div>
+        <div class="lobby-settings">
+          <label>초기 자금<input id="lobbyMoney" type="number" min="0" step="100" value="1200"></label>
+          <label>초기 월급<input id="lobbySalary" type="number" min="0" step="10" value="220"></label>
+          <label>체스 시계(분)<input id="lobbyClock" type="number" min="1" max="180" value="15"></label>
+          <label>턴 AP<input id="lobbyAP" type="number" min="1" max="9" value="3"></label>
+        </div>
+        <div class="lobby-rules"><label><input id="lobbyKingCapture" type="checkbox" checked disabled> 킹 실제 포획 승리</label><label><input id="lobbySpecialPieces" type="checkbox" checked> 특수기물 시장 사용</label><label><input id="lobbyStockfish" type="checkbox" checked> Stockfish 수 평가</label><label><input id="lobbyOrbitalEnabled" type="checkbox" checked> 궤도 빔</label><label>빔 가격<input id="lobbyOrbitalPrice" type="number" min="0" step="1000" value="50000"></label><label>빔 AP<input id="lobbyOrbitalAP" type="number" min="1" max="99" value="10"></label></div>
+        <div class="lobby-multiplayer-tools hidden" id="lobbyMultiplayerTools">
+          <div class="lobby-room-actions"><button class="primary" id="lobbyCreateRoomBtn" type="button">방 만들기</button><input id="lobbyRoomCodeInput" maxlength="6" placeholder="방 코드" autocomplete="off"><button class="ghost" id="lobbyJoinRoomBtn" type="button">방 입장</button><button class="ghost" id="lobbyWatchRoomBtn" type="button">관전</button></div>
+          <div class="lobby-room-status" id="lobbyRoomStatus">방을 만들거나 코드를 입력해 입장해.</div>
+        </div>
+        <button class="primary lobby-start-btn" id="lobbyStartBtn" type="button">싱글플레이 시작</button>
+      </section>
+    </div>
+  </div>
   <div class="app-shell">
     <header class="title-news-row">
       <div class="brand-block">
@@ -16,14 +42,13 @@
           <button class="audio-toggle" id="bgmToggle" type="button" title="배경음악 켜기/끄기"><img id="bgmToggleIcon" src="assets/images/bgm_on.png" alt="배경음악 켜짐"></button>
           <button class="audio-toggle debug-toggle" id="stockfishDebugToggle" type="button" title="Stockfish DEBUG 로그 켜기/끄기" aria-pressed="false">SF</button>
         </div>
-        <h1>자본주의 체스 <span>v0.1.5</span></h1>
+        <h1>자본주의 체스 <span>v0.2</span></h1>
         <div class="engine-pill" id="engineStatus">Stockfish: 확인 중…</div>
       </div>
       <section class="headline-strip" aria-label="주요 뉴스">
         <div class="headline-label">주요 뉴스</div>
         <div class="headline-window"><div class="headline-text" id="headlineText">시장 개장 준비 중…</div></div>
       </section>
-      <div class="multiplayer-bar"><span id="multiplayerStatus">오프라인</span><button class="ghost" id="multiplayerOpenBtn" type="button">온라인 방</button></div>
     </header>
 
     <div class="players-row fixed-status">
@@ -76,6 +101,7 @@
             <input id="chatInput" type="text" maxlength="200" autocomplete="off" placeholder="메시지를 입력해줘" disabled />
             <button class="primary" id="chatSendBtn" type="submit" disabled>전송</button>
           </form>
+          <div class="chat-room-controls"><button class="ghost" id="resignBtn" type="button" disabled>기권</button><button class="ghost danger-button" id="closeRoomBtn" type="button" disabled>방 종료</button></div>
         </section>
         <section class="panel log-panel bottom-log">
           <div class="panel-head"><h2>거래소 / 전장 로그</h2><button class="ghost" id="clearLogBtn">지우기</button></div>
@@ -94,7 +120,7 @@
           <div class="special-stock-status" id="specialLoadStatus">특수기물 데이터 불러오는 중…</div>
         </section>
         <section class="panel economy-panel"><div class="panel-head"><h2>노동 · 현금흐름</h2><span>돈은 킹보다 오래 산다</span></div><div class="econ-grid"><button id="jobBtn"><b>알바</b><small>+ $100 · 1 AP</small></button><button id="salaryBtn"><b>월급 인상</b><small id="salaryUpgradeText">비용 계산 중</small></button><button id="depositBtn"><b>적금 $500</b><small>4회 내 턴 뒤 +12%</small></button><button id="ventureBtn"><b>벤처 투자 $300</b><small>3회 내 턴 뒤 0.35~2.2×</small></button></div><div class="maturity" id="maturityList"></div></section>
-        <section class="panel special-panel"><div class="panel-head"><h2>특수 행동</h2><span>여기서부터 체스가 아님</span></div><div class="econ-grid"><button id="promoteBtn"><b>즉시 승급</b><small>선택 폰 → 퀸 · $600 · 1 AP</small></button><button id="teleportBtn"><b>즉시이동</b><small>선택 기물 → 빈 칸 · $800 · 2 AP</small></button><button id="insuranceBtn"><b>킹 부활 보험</b><small>$1,200 · 1 AP · 1회</small></button></div><div class="insurance-status" id="insuranceStatus"></div></section>
+        <section class="panel special-panel"><div class="panel-head"><h2>특수 행동</h2><span>여기서부터 체스가 아님</span></div><div class="econ-grid"><button id="promoteBtn"><b>즉시 승급</b><small>선택 폰 → 퀸 · $1,500 · 1 AP · 승급 후 공격 2턴 제한</small></button><button id="teleportBtn"><b>즉시이동</b><small>선택 기물 → 빈 칸 · $800 · 2 AP</small></button><button id="insuranceBtn"><b>킹 부활 보험</b><small>$1,200 · 1 AP · 1회</small></button><button id="orbitalStrikeBtn" class="orbital-action"><b>☢ ORBITAL NUCLEAR BEAM</b><small>$50,000 · 10 AP</small></button></div><div class="orbital-status" id="orbitalStatus"></div><div class="insurance-status" id="insuranceStatus"></div></section>
         <section class="panel stocks-panel"><div class="panel-head"><h2>증권시장</h2><span id="marketTurn">시장 개장</span></div><div class="ticker" id="ticker"></div><div class="stock-controls"><select id="stockSelect"></select><input id="stockQty" type="number" min="1" max="99" value="1" /><button id="stockBuyBtn">매수</button><button id="stockSellBtn">매도</button></div><div class="portfolio" id="portfolio"></div><div class="news"><h3>뉴스</h3><div id="newsFeed"></div></div></section>
         <section class="panel rules-panel"><div class="panel-head"><h2>현재 프로토타입 룰</h2></div><ul><li>양측은 킹 1개와 초기자금으로 시작.</li><li>턴당 AP 3. 일반 체스 이동은 턴당 1회.</li><li>특수기물은 자기 진영에만 배치되며 구매 턴에는 비활성.</li><li>특수기물은 다음 자기 턴 시작에 활성화되고, 설치형은 배치된 채 능력만 대기.</li><li>상대 기물을 잡으면 그 기물 가격만큼 즉시 현금 획득.</li><li>턴 시작 때 월급 + 기물 유지세 납부.</li><li>체크는 위험 시각효과일 뿐이며, 체크 상태에서도 턴 종료 가능.</li><li>승리는 상대 킹을 실제로 포획할 때만 발생.</li></ul></section>
       </aside>
@@ -124,17 +150,6 @@
 
   <div class="move-grade-overlay" id="moveGradeOverlay" aria-live="polite" aria-hidden="true"></div>
 
-  <div class="modal hidden" id="multiplayerModal" role="dialog" aria-modal="true" aria-label="온라인 멀티플레이">
-    <div class="modal-card multiplayer-card">
-      <button class="piece-info-close ghost" id="multiplayerCloseBtn" type="button">×</button>
-      <h2>온라인 방</h2>
-      <p class="muted">Host는 백, Guest는 흑으로 시작해.</p>
-      <div class="multiplayer-actions"><button class="primary" id="createRoomBtn" type="button">방 만들기</button><input id="roomCodeInput" maxlength="6" placeholder="방 코드" autocomplete="off"><button class="ghost" id="joinRoomBtn" type="button">입장</button></div>
-      <div class="room-code-box">방 코드 <strong id="roomCodeValue">-</strong><button class="ghost" id="copyRoomCodeBtn" type="button">복사</button></div>
-      <div class="muted" id="multiplayerRole">로컬 게임</div>
-      <div class="multiplayer-room-controls"><button class="ghost" id="resignBtn" type="button" disabled>기권</button><button class="ghost danger-button" id="closeRoomBtn" type="button" disabled>방 종료</button></div>
-    </div>
-  </div>
   <div class="move-grade-overlay" id="moveGradeOverlay" aria-live="polite" aria-hidden="true"></div>
 
   <script src="js/multiplayer.js"></script>
@@ -143,6 +158,7 @@
   <script src="js/specialPieces.js"></script>
   <script src="js/pieceInfo.js"></script>
   <script src="js/stockfishPositionAdapter.js"></script>
+  <script src="js/orbitalBeamVfx.js"></script>
   <script src="js/stockfishEngine.js"></script>
   <script src="game.js"></script>
 </body>
