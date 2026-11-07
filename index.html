@@ -53,8 +53,8 @@
     <header class="title-news-row">
       <div class="brand-block">
         <div class="audio-controls" aria-label="오디오 설정" data-i18n-aria="audio.settings">
-          <button class="audio-toggle" id="soundToggle" type="button" title="효과음 켜기/끄기"><img id="soundToggleIcon" src="assets/images/sound_on.png" alt="효과음 켜짐"></button>
-          <button class="audio-toggle" id="bgmToggle" type="button" title="배경음악 켜기/끄기"><img id="bgmToggleIcon" src="assets/images/bgm_on.png" alt="배경음악 켜짐"></button>
+          <button class="audio-toggle" id="soundToggle" type="button" title="효과음 켜기/끄기" data-i18n-title="audio.soundToggle"><img id="soundToggleIcon" src="assets/images/sound_on.png" alt="효과음 켜짐"></button>
+          <button class="audio-toggle" id="bgmToggle" type="button" title="배경음악 켜기/끄기" data-i18n-title="audio.bgmToggle"><img id="bgmToggleIcon" src="assets/images/bgm_on.png" alt="배경음악 켜짐"></button>
           <button class="audio-toggle debug-toggle" id="stockfishDebugToggle" type="button" title="Stockfish DEBUG 로그 켜기/끄기" aria-pressed="false">SF</button>
         </div>
         <h1><span data-i18n="brand.name">자본주의 체스</span> <span>v0.2</span></h1>
@@ -156,14 +156,12 @@
     </div>
   </div>
 
-  <div class="modal hidden" id="pieceInfoModal" role="dialog" aria-modal="true" aria-label="기물 상세정보">
+  <div class="modal hidden" id="pieceInfoModal" role="dialog" aria-modal="true" aria-label="기물 상세정보" data-i18n-aria="pieceInfo.dialog">
     <div class="modal-card piece-info-card" id="pieceInfoCard">
-      <button class="piece-info-close ghost" id="pieceInfoClose" aria-label="닫기">×</button>
+      <button class="piece-info-close ghost" id="pieceInfoClose" aria-label="닫기" data-i18n-aria="button.close">×</button>
       <div id="pieceInfoBody"></div>
     </div>
   </div>
-
-  <div class="move-grade-overlay" id="moveGradeOverlay" aria-live="polite" aria-hidden="true"></div>
 
   <div class="move-grade-overlay" id="moveGradeOverlay" aria-live="polite" aria-hidden="true"></div>
 

@@ -42,6 +42,6 @@
     const confidence=Math.max(0.4,Math.min(1,1-Math.min(0.42,penalty*0.25)-excluded*0.12-approximate*0.015));
     return {fen:`${rows.join("/")} ${sideToMove} - - 0 1`,confidence,included,equivalent,excluded,approximate,kings:kings.w+kings.b,analyzable:included>0&&kings.w===1&&kings.b===1};
   }
-  function confidenceLabel(value){return value>=.85?"높음":value>=.6?"보통":"낮음";}
+  function confidenceLabel(value){const key=value>=.85?"confidence.high":value>=.6?"confidence.medium":"confidence.low";const fallback=value>=.85?"높음":value>=.6?"보통":"낮음";return window.GameLanguage?.text(key,fallback)??fallback;}
   window.stockfishPositionAdapter={fromBoard,confidenceLabel,equivalentFor};
 })();

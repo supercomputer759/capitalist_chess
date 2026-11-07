@@ -28,7 +28,15 @@
     const cancel=e=>{e?.preventDefault();cleanup();onCancel?.();};const key=e=>{if(e.key==="Escape")cancel(e);};
     overlay.addEventListener("mousemove",update);overlay.addEventListener("click",confirm);overlay.addEventListener("contextmenu",cancel);document.addEventListener("keydown",key);window.addEventListener("resize",resize);return cancel;
   }
-  function showResult(result){const destroyed=result.destroyedPieces||[],friendly=destroyed.filter(p=>p.color===result.shooter),enemy=destroyed.filter(p=>p.color!==result.shooter),ratio=result.friendlyDamage?`${(result.enemyDamage/result.friendlyDamage).toFixed(1)} : 1`:"∞ PERFECT STRIKE";const panel=document.createElement("div");panel.className="orbital-result";panel.innerHTML=`<button type="button" aria-label="결과 닫기">×</button><b>☢ ORBITAL NUCLEAR BEAM</b><strong>궤도 타격 완료</strong><span>파괴된 기물　${destroyed.length}개</span><span>아군 손실　${friendly.length}개　/　적군 손실　${enemy.length}개</span><span>아군 피해액　$${Number(result.friendlyDamage||0).toLocaleString()}　/　적군 피해액　$${Number(result.enemyDamage||0).toLocaleString()}</span><span>피해 교환비　${ratio}</span><em>${result.kingDestroyed?.w||result.kingDestroyed?.b?"KING DESTROYED":"TARGET NEUTRALIZED"}</em>`;document.body.appendChild(panel);const close=()=>panel.remove();panel.querySelector("button").onclick=close;setTimeout(close,6500);}
+  function showResult(result){
+    const text=(key,fallback,values={})=>window.GameLanguage?.text(key,fallback,values)??fallback;
+    const destroyed=result.destroyedPieces||[],friendly=destroyed.filter(p=>p.color===result.shooter),enemy=destroyed.filter(p=>p.color!==result.shooter);
+    const ratio=result.friendlyDamage?`${(result.enemyDamage/result.friendlyDamage).toFixed(1)} : 1`:"PERFECT STRIKE";
+    const panel=document.createElement("div");panel.className="orbital-result";
+    const money=value=>"$"+Number(value||0).toLocaleString();
+    panel.innerHTML=`<button type="button" aria-label="${text("orbital.resultClose","결과 닫기")}">×</button><b>ORBITAL NUCLEAR BEAM</b><strong>${text("orbital.completed","궤도 타격 완료")}</strong><span>${text("orbital.destroyedCount","파괴된 기물 {count}개",{count:destroyed.length})}</span><span>${text("orbital.lossCounts","아군 손실 {friendly}개 / 적군 손실 {enemy}개",{friendly:friendly.length,enemy:enemy.length})}</span><span>${text("orbital.lossValues","아군 피해액 {friendly} / 적군 피해액 {enemy}",{friendly:money(result.friendlyDamage),enemy:money(result.enemyDamage)})}</span><span>${text("orbital.ratio","피해 교환비 {ratio}",{ratio})}</span><em>${result.kingDestroyed?.w||result.kingDestroyed?.b?"KING DESTROYED":"TARGET NEUTRALIZED"}</em>`;
+    document.body.appendChild(panel);const close=()=>panel.remove();panel.querySelector("button").onclick=close;setTimeout(close,6500);
+  }
   function play(result){
     const overlay=makeHud();overlay.classList.add("strike-sequence");mountBoard(overlay);const target=overlay.querySelector("[data-target]"),power=overlay.querySelector("[data-power]"),targetPoint=fromKey(result.target);target.textContent=(result.target||"--").toUpperCase();if(targetPoint)placeScope(overlay,targetPoint);
     const count=Math.min(18,Math.max(8,Number(result.affectedSquares?.length||0)+6));for(let i=0;i<count;i++){const orb=document.createElement("i");orb.className="orbital-orb";orb.style.setProperty("--i",i);overlay.querySelector(".orbital-orbs").appendChild(orb);}

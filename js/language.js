@@ -14,24 +14,33 @@
   }
 
   function text(key,fallback,values={}){
-    let value=typeof messages[key]==="string"?messages[key]:fallback;
-    for(const [name,replacement] of Object.entries(values))value=value.replaceAll("{"+name+"}",String(replacement));
-    return value;
+    const value=typeof messages[key]==="string"?messages[key]:String(fallback??key);
+    return value.replace(/\{([A-Za-z0-9_]+)\}/g,(token,name)=>Object.prototype.hasOwnProperty.call(values,name)?String(values[name]):token);
   }
 
   function apply(root=document){
     root.querySelectorAll("[data-i18n]").forEach(element=>{
+      const fallback=original(element,"text",element.textContent);
       const translated=messages[element.dataset.i18n];
-      element.textContent=typeof translated==="string"?translated:original(element,"text",element.textContent);
+      element.textContent=typeof translated==="string"?translated:fallback;
     });
     root.querySelectorAll("[data-i18n-placeholder]").forEach(element=>{
+      const fallback=original(element,"placeholder",element.placeholder);
       const translated=messages[element.dataset.i18nPlaceholder];
-      element.placeholder=typeof translated==="string"?translated:original(element,"placeholder",element.placeholder);
+      element.placeholder=typeof translated==="string"?translated:fallback;
     });
     root.querySelectorAll("[data-i18n-value]").forEach(element=>{
+      const fallback=original(element,"value",element.value);
       const translated=messages[element.dataset.i18nValue];
-      element.value=typeof translated==="string"?translated:original(element,"value",element.value);
+      element.value=typeof translated==="string"?translated:fallback;
     });
+    for(const attribute of ["title","alt"]){
+      root.querySelectorAll("[data-i18n-"+attribute+"]").forEach(element=>{
+        const fallback=original(element,attribute,element.getAttribute(attribute)||"");
+        const translated=messages[element.getAttribute("data-i18n-"+attribute)];
+        element.setAttribute(attribute,typeof translated==="string"?translated:fallback);
+      });
+    }
     root.querySelectorAll("[data-i18n-aria]").forEach(element=>{
       const translated=messages[element.dataset.i18nAria];
       const fallback=original(element,"aria-label",element.getAttribute("aria-label")||"");
@@ -71,6 +80,7 @@
     messages={};
     currentLocale=DEFAULT_LOCALE;
     document.documentElement.lang="ko";
+    apply();
     return false;
   }
 
