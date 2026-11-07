@@ -37,12 +37,29 @@
     panel.innerHTML=`<button type="button" aria-label="${text("orbital.resultClose","결과 닫기")}">×</button><b>ORBITAL NUCLEAR BEAM</b><strong>${text("orbital.completed","궤도 타격 완료")}</strong><span>${text("orbital.destroyedCount","파괴된 기물 {count}개",{count:destroyed.length})}</span><span>${text("orbital.lossCounts","아군 손실 {friendly}개 / 적군 손실 {enemy}개",{friendly:friendly.length,enemy:enemy.length})}</span><span>${text("orbital.lossValues","아군 피해액 {friendly} / 적군 피해액 {enemy}",{friendly:money(result.friendlyDamage),enemy:money(result.enemyDamage)})}</span><span>${text("orbital.ratio","피해 교환비 {ratio}",{ratio})}</span><em>${result.kingDestroyed?.w||result.kingDestroyed?.b?"KING DESTROYED":"TARGET NEUTRALIZED"}</em>`;
     document.body.appendChild(panel);const close=()=>panel.remove();panel.querySelector("button").onclick=close;setTimeout(close,6500);
   }
-  function play(result){
+  function fallbackPlay(result){
     const overlay=makeHud();overlay.classList.add("strike-sequence");mountBoard(overlay);const target=overlay.querySelector("[data-target]"),power=overlay.querySelector("[data-power]"),targetPoint=fromKey(result.target);target.textContent=(result.target||"--").toUpperCase();if(targetPoint)placeScope(overlay,targetPoint);
     const count=Math.min(18,Math.max(8,Number(result.affectedSquares?.length||0)+6));for(let i=0;i<count;i++){const orb=document.createElement("i");orb.className="orbital-orb";orb.style.setProperty("--i",i);overlay.querySelector(".orbital-orbs").appendChild(orb);}
     const board=document.querySelector(".orbital-live-board"),rect=board?.querySelector(".square")?.getBoundingClientRect();if(rect)for(const cell of result.destroyedPieces||[]){const point=centerOf({r:cell.r,c:cell.c}),debris=document.createElement("i");if(point){debris.className="orbital-debris";debris.style.left=`${point.x}px`;debris.style.top=`${point.y}px`;document.body.appendChild(debris);setTimeout(()=>debris.remove(),1800);}}
     const start=performance.now(),duration=6200,resultTimer=setTimeout(()=>showResult(result),5000);let raf=0;const tick=now=>{const t=clamp((now-start)/duration,0,1);power.textContent=`${Math.round(t<.78?t/.78*99:t<.86?99+(t-.78)/.08:100)}%`;overlay.style.setProperty("--progress",t);if(t<1)raf=requestAnimationFrame(tick);else{restoreBoard();overlay.remove();}};raf=requestAnimationFrame(tick);return ()=>{cancelAnimationFrame(raf);clearTimeout(resultTimer);restoreBoard();overlay.remove();};
   }
   function fromKey(key){const text=String(key||"").toLowerCase(),c=files.indexOf(text[0]),r=8-Number(text[1]);return c>=0&&r>=0&&r<8?{r,c,key:`${files[c]}${8-r}`} : null;}
+  let cancelPlayback=null;
+  function play(result,options={}){
+    cancelPlayback?.();
+    let currentCancel=null,cancelled=false;
+    const cancel=()=>{
+      if(cancelled)return;cancelled=true;currentCancel?.();
+      if(cancelPlayback===cancel)cancelPlayback=null;
+    };
+    cancelPlayback=cancel;
+    if(window.CataclysmBridge){
+      currentCancel=window.CataclysmBridge.play(result,{
+        ...options,onComplete:()=>{if(cancelPlayback===cancel)cancelPlayback=null;showResult(result);},
+        onFallback:()=>{if(!cancelled)currentCancel=fallbackPlay(result);}
+      });
+    }else currentCancel=fallbackPlay(result);
+    return cancel;
+  }
   window.OrbitalBeamVfx={startTargeting,play};window.debugOrbitalBeam=key=>play({target:key,affectedSquares:[]});
 })();

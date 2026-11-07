@@ -110,3 +110,7 @@ Windows에서는 `START_GAME.bat`을 더블클릭하면 된다.
 로비의 언어 선택은 이 기기에 저장됩니다. 기본 한국어는 `data/ko_kr.json`, 영어는 `data/en_us.json`에서 읽습니다. 선택한 파일을 불러오지 못하면 한국어 파일을 시도하고, 두 파일 모두 읽지 못하면 HTML과 코드에 들어 있는 기본 한국어 문구를 사용합니다.
 
 영어 문구를 다듬을 때는 키 이름과 `{amount}`, `{v0}` 같은 치환 표기를 유지하세요. 특수기물 이름·설명은 `piece.<기물 ID>.*`, 기업명은 `company.*`, 뉴스는 `news.market-*` 키입니다. 파일은 UTF-8(BOM 없음), LF로 저장합니다.
+
+## 궤도 캐논 V16
+
+CATACLYSM 연출은 `assets/effects/cataclysm/`에서 관리합니다. 실제 체스판으로 조준한 뒤 호스트가 확정한 배치·가격·피해 결과를 표시하며, ESC나 상단 버튼으로 건너뛸 수 있습니다. 구조·성능 설정·검증 방법은 [연출 안내](assets/effects/cataclysm/README.md)를 참고하세요.

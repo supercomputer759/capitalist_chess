@@ -1,0 +1,48 @@
+<!doctype html><html lang="ko"><head><title>RESONANCE / CATACLYSM V16 | TOTAL ANNIHILATION</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#03060d;color:white"><div id="meltdown7" style="height:min(790px,100vh);min-height:570px;position:relative;overflow:hidden;background:#020610;border:1px solid #24506c;border-radius:14px;color:#ecfaff;font-family:Consolas,'Courier New',monospace;isolation:isolate">
+<link rel="stylesheet" href="../assets/effects/cataclysm/cinematic.css">
+<canvas aria-label="Interactive orbital cannon cinematic: choose a chessboard square and fire"></canvas><div class="screen"></div><div class="lettertop"></div><div class="letterbottom"></div><div class="glint"></div><div class="shotfade"></div>
+<div class="header"><div><div class="micro">STRATEGIC ORBITAL WEAPONS DIVISION · CINEMATIC CAMERA</div><div class="title">RESONANCE <b>/ CATACLYSM V16</b></div><div class="sub">OCS-05 · TOTAL ANNIHILATION · THERMAL SHOCKFRONT · RESIDUAL PLASMA FIELD</div></div><div class="right">WEAPON COST <span class="weaponCostLabel">$50,000</span><strong class="system">AWAITING AUTHORIZATION</strong><strong class="timer">T+ 00.0 s</strong></div></div>
+<div class="perfHUD" aria-live="off">FPS <span class="fpsValue">--</span> · <span class="frameMs">--</span> ms<div class="budgetLine">BD 0.0 · ATM 0.0 · CAM 0.0</div></div>
+<div class="criticalHUD" aria-live="off">
+  <div class="criticalLine"><span>CORE TEMPERATURE</span><strong class="coreTemp">320 K</strong></div>
+  <div class="criticalBar"><span class="tempFill"></span></div>
+  <div class="criticalLine"><span>DISCHARGE OUTPUT</span><strong class="outputValue">0%</strong></div>
+  <div class="criticalBar"><span class="outputFill"></span></div>
+  <div class="criticalLine"><span>BEAM STABILITY</span><strong class="beamStability">100%</strong></div>
+  <div class="criticalLine"><span>COIL ARRAY RPM</span><strong class="coilRpm">0 RPM</strong></div>
+  <div class="criticalLine"><span>TIME TO IMPACT</span><strong class="etaToImpact">--</strong></div>
+  <div class="criticalLine"><span class="coolantState">SYSTEM NOMINAL</span><strong class="coolantPct">100%</strong></div>
+</div>
+<div class="replayLabel">CAMERA REPLAY · MUZZLE</div>
+<div class="directorHUD" aria-live="off"><span class="directorTag">AUTO DIRECTOR</span><strong class="directorShot">STANDBY / MASTER WIDE</strong></div>
+<div class="timeDilationHUD" aria-live="off"><span>CHRONO FIELD</span><strong class="timeDilationValue">TIME DILATION · ×0.18</strong></div>
+<div class="damageReport" role="dialog" aria-modal="false" aria-label="Battle damage report">
+ <div class="reportTop"><div><div class="reportEyebrow">OCS-05 · POST-STRIKE ANALYSIS</div><div class="reportTitle">BATTLE DAMAGE REPORT</div></div><div class="reportStatus">STRIKE COMPLETE</div></div>
+ <div class="reportTarget">TARGET GRID <strong class="reportTargetName">E8</strong><span> · 3×3 ORBITAL STRIKE ZONE</span></div>
+ <div class="reportTelemetry">
+  <div><small>AREA COVERAGE</small><strong class="reportCoverage">9 / 9 CELLS</strong><div class="reportMeter"><i class="reportCoverageFill"></i></div></div>
+  <div><small>UNIT DENSITY</small><strong class="reportDensity">0 CONTACTS</strong><div class="reportMeter"><i class="reportDensityFill"></i></div></div>
+  <div><small>CASUALTY INDEX</small><strong class="reportIndex">0%</strong><div class="reportMeter"><i class="reportIndexFill"></i></div></div>
+ </div>
+ <div class="reportGrid">
+  <div><small>GRID CELLS HIT</small><strong class="reportCells">9 / 9</strong></div>
+  <div><small>PIECES DESTROYED</small><strong class="reportPieces">0</strong></div>
+  <div><small>WHITE / BLACK LOSSES</small><strong class="reportSides">0 / 0</strong></div>
+  <div><small>WEAPON COST</small><strong class="reportCostLabel">$50,000</strong></div>
+  <div class="reportWide"><small>DESTROYED ASSET VALUE</small><strong class="reportAssetValue">LIVE GAME DATA NOT CONNECTED</strong></div>
+  <div class="reportWide"><small>ASSESSMENT</small><strong class="reportAssessment">STRIKE ZONE ANALYZED · PREVIEW BOARD</strong></div>
+ </div>
+ <div class="reportVerdict"><small>STRIKE CLASSIFICATION</small><strong class="reportVerdictText">AWAITING DAMAGE ANALYSIS</strong></div>
+ <div class="reportFooter"><span class="reportFootnote">PREVIEW COUNTS ARE FROM THE BUILT-IN BOARD. LIVE GAME CAN CALL CATACLYSM.setBattleReport(data) FOR VERIFIED CASUALTIES / ASSET VALUE.</span><div class="reportActions"><button class="reportReplay" type="button">REPLAY STRIKE</button><button class="reportClose" type="button">CLOSE REPORT</button></div></div>
+</div>
+<div class="settingsPanel" role="group" aria-label="Performance settings">
+  <div class="settingsHead"><span>PERFORMANCE CONTROL</span><button class="settingsClose" type="button">CLOSE</button></div>
+  <div class="settingRow"><label for="qualityMode">Effect detail</label><select id="qualityMode" class="qualityMode"><option value="HIGH">HIGH · FULL FX</option><option value="LDM">LDM · LOW DETAIL</option><option value="ULDM">ULDM · ULTRA LOW</option></select></div>
+  <div class="settingRow"><label for="resolutionScale">Render resolution / supersampling</label><select id="resolutionScale"><option value="0.5">50% · PERFORMANCE</option><option value="0.65">65%</option><option value="0.8">80%</option><option value="1" selected>100% · ORIGINAL V2 RESOLUTION</option><option value="1.1">110% · SHARP</option><option value="1.25">125% · HIGH RES</option><option value="1.5">150% · ULTRA RES</option></select></div>
+  <div class="settingRow"><label for="fpsLimit">FPS limiter</label><select id="fpsLimit"><option value="0">Unlimited</option><option value="240">240 FPS</option><option value="165">165 FPS</option><option value="144">144 FPS</option><option value="120">120 FPS</option><option value="90">90 FPS</option><option value="60">60 FPS</option><option value="30">30 FPS</option></select></div>
+  <div class="settingRow"><label for="showFps">FPS counter</label><label class="toggle"><input id="showFps" type="checkbox" checked> Show FPS</label></div>
+  <div class="settingHint">FPS is unlimited by default. Render resolution is independent of effect detail: 100% uses the display pixel ratio (up to 2×); lower values reduce GPU load, while values above 100% supersample. LDM/ULDM reduce decorative effects, not resolution.</div>
+</div>
+<div class="captionpanel"><div class="chapter">00 // STANDBY</div><div class="headline">ORBITAL ARRAY READY</div><div class="description">SELECT ANY SQUARE ON THE BOARD, THEN AUTHORIZE THE STRIKE. TOTAL ANNIHILATION · THERMAL SHOCKFRONT · PERSISTENT PLASMA SCARS · TIME DILATION.</div><div class="warning"></div></div>
+<div class="bottom"><div class="readings"><div><small>GROUND CAPACITOR</small><strong class="ground">0%</strong></div><div><small>RESONANCE NODES</small><strong class="nodes">0 / 5</strong></div><div><small>ORBITAL REACTOR</small><strong class="reactor">0%</strong></div><div><small>LOCKED TARGET</small><strong class="target">E8</strong></div></div><div class="progress"><div class="fill"></div></div><div class="buttons"><button class="fire">☢ AUTHORIZE <span class="weaponCostButton">$50,000</span> STRIKE</button><button class="sound">SFX ON</button><button class="camera">CAM ON</button><button class="settingsBtn">⚙ SETTINGS</button><button class="ringskip">RINGS ▶</button><button class="deployskip">DEPLOY ▶</button><button class="chargeskip">OVERLOAD ▶</button><button class="skip">IMPACT ▶</button><button class="beamSkip">BEAM ▶</button><button class="replayBtn">REPLAY CAM</button><button class="afterskip">AFTER ▶</button><button class="reset">RESET</button></div><div class="smallnote">CLICK SQUARE → FIRE · CAMERA REPLAY · EMERGENCY REARM · V16 CACHED RENDER PIPELINE · UNLOCKED FPS</div></div>
+<script src="../assets/effects/cataclysm/cinematic.js"></script></div></body></html>

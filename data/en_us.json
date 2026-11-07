@@ -544,5 +544,7 @@
   "rarity.mythic": "Mythic",
   "brand.name": "Capitalist Chess",
   "lobby.title": "Game Lobby",
-  "piece.special": "Special piece"
+  "piece.special": "Special piece",
+  "orbital.cinematic": "Orbital strike cinematic",
+  "orbital.skipCinematic": "Skip cinematic"
 }

@@ -1027,17 +1027,24 @@ function executeOrbitalStrike(targetKey){
   const ready=orbitalStrikeReady();if(!ready.ok)return log(langText("log.orbitalRejected","ORBITAL BEAM 거부: {v0}",{v0:ready.reason}),"bad");
   const target=fromName(String(targetKey||""));if(!target)return log(langText("notice.orbitalInvalidTarget","궤도 빔 목표 좌표가 잘못됐어."),"bad");
   const shooter=state.turn,affectedSquares=getOrbitalStrikeSquares(target),destroyedPieces=[];let friendlyDamage=0,enemyDamage=0,whiteKing=false,blackKing=false;
+  // 연출에는 파괴 이전 배치를 전달한다. 실제 판정과 차감은 이 함수에서만 처리한다.
+  const boardPieces=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const piece=state.board[r][c];if(!piece)continue;
+    boardPieces.push({r,c,color:piece.color,type:piece.type,specialId:piece.specialId||null,
+      visualType:piece.type==="special"?specialChessType(specialDef(piece.specialId)):piece.type});
+  }
   current().money-=CFG.orbitalStrike.price;current().ap-=CFG.orbitalStrike.apCost;
   for(const cell of affectedSquares){const p=state.board[cell.r][cell.c];if(!p)continue;const value=p.type==="k"?0:piecePrice(p);destroyedPieces.push({r:cell.r,c:cell.c,key:cell.key,color:p.color,type:p.type,specialId:p.specialId||null,value});if(p.color===shooter)friendlyDamage+=value;else enemyDamage+=value;if(p.color==="w"&&isKingLike(p))whiteKing=true;if(p.color==="b"&&isKingLike(p))blackKing=true;state.board[cell.r][cell.c]=null;}
-  const result={target:targetKey,shooter,affectedSquares,destroyedPieces,friendlyDamage,enemyDamage,kingDestroyed:{w:whiteKing,b:blackKing}};
+  const result={target:targetKey,shooter,cost:CFG.orbitalStrike.price,boardPieces,affectedSquares,destroyedPieces,friendlyDamage,enemyDamage,kingDestroyed:{w:whiteKing,b:blackKing}};
   log(langText("log.orbitalFired","{v1}이 ORBITAL NUCLEAR BEAM을 발사했습니다.",{v0:state.turnNo,v1:sideName(shooter)}) ,"bad");log(langText("log.orbitalDestroyed","아군 {v1}개 / 적군 {v2}개 기물이 파괴되었습니다.",{v0:state.turnNo,v1:destroyedPieces.filter(p=>p.color===shooter).length,v2:destroyedPieces.filter(p=>p.color!==shooter).length}));log(langText("log.orbitalDamage","아군 피해액 {v1} / 적군 피해액 {v2}",{v0:state.turnNo,v1:fmt(friendlyDamage),v2:fmt(enemyDamage)}));
   if(whiteKing)log(langText("log.orbitalWhiteKing","백 KING이 궤도 타격으로 파괴되었습니다.",{v0:state.turnNo}) ,"bad");if(blackKing)log(langText("log.orbitalBlackKing","흑 KING이 궤도 타격으로 파괴되었습니다.",{v0:state.turnNo}) ,"bad");
-  state.engineRevision++;state.selected=null;state.legalTargets=[];render();window.OrbitalBeamVfx?.play(result);
+  state.engineRevision++;state.selected=null;state.legalTargets=[];render();window.OrbitalBeamVfx?.play(result,{muted:!state.audio.sound});
   if(multiplayerRole()==="host"){window.multiplayer.sendOrbitalStrikeResult?.(result);window.multiplayer.sendState(serializeGameState());}
   if(whiteKing&&blackKing)return finishGame(null,"양쪽 KING이 궤도 타격으로 동시에 파괴되어 무승부","result.orbitalBoth");
   if(whiteKing||blackKing)return finishGame(whiteKing?"b":"w","ORBITAL NUCLEAR BEAM이 킹을 파괴했어","result.orbitalKing");
 }
-window.handleOrbitalStrikeResult=result=>{if(multiplayerRole()!=="host")window.OrbitalBeamVfx?.play(result);};
+window.handleOrbitalStrikeResult=result=>{if(multiplayerRole()!=="host")window.OrbitalBeamVfx?.play(result,{muted:!state.audio.sound});};
 window.debugOrbitalStrike=target=>executeOrbitalStrike(target);
 
 function startPurchase(type){

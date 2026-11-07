@@ -544,5 +544,7 @@
   "piece.black_hole.warning.0": "아군도 제거됨",
   "piece.black_hole.warning.1": "킹도 예외 없음",
   "piece.suicide_pawn.warning.0": "킹도 폭발에 휘말릴 수 있음",
-  "piece.mounted_king_mk2.warning.0": "탈출 가능 칸이 없으면 그대로 잡힘"
+  "piece.mounted_king_mk2.warning.0": "탈출 가능 칸이 없으면 그대로 잡힘",
+  "orbital.cinematic": "궤도 타격 연출",
+  "orbital.skipCinematic": "연출 건너뛰기"
 }
