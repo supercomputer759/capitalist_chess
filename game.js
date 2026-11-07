@@ -521,10 +521,10 @@ async function init() {
   await window.GameLanguage.load();
   const status=document.getElementById("specialLoadStatus");
   if(!specialData){
-    if(status)status.textContent="특수기물 데이터를 불러오지 못했습니다. 일반 게임은 계속할 수 있습니다.";
+    if(status)status.textContent=langText("shop.loadFailed","특수기물 데이터를 불러오지 못했습니다. 일반 게임은 계속할 수 있습니다.");
   }else{
     restockSpecialPieces(true);
-    if(status)status.textContent="공유 재고 · 휠클릭으로 상세정보";
+    if(status)status.textContent=langText("shop.sharedStock","공유 재고 · 휠클릭으로 상세정보");
   }
   state.board[7][4] = piece("k","w");
   state.board[0][4] = piece("k","b");
@@ -534,8 +534,8 @@ async function init() {
   bindControls();
   bindAudioControls();
   if(window.multiplayer){window.multiplayer.onAction=action=>window.handleMultiplayerAction(action);window.multiplayer.onState=snapshot=>applyGameState(snapshot);window.multiplayer.bindUI();}
-  addNews("시장", "자본주의 체스 거래소가 개장했다. 모두의 통장이 무사하길.");
-  log("게임 시작. 양측 킹 1개 + $1,500.","gold");
+  addNews({id:"opening",companyId:"market",company:"시장",text:"자본주의 체스 거래소가 개장했다. 모두의 통장이 무사하길."});
+  log(langText("log.gameStart","게임 시작. 양측 킹 1개 + $1,500."),"gold");
   initStockfish();
   render();
   setupLobby();
@@ -572,8 +572,8 @@ function specialChessType(def){
 }
 function specialChessGlyph(def){return ({k:"\u2654",q:"\u2655",r:"\u2656",b:"\u2657",n:"\u2658",p:"\u2659"})[specialChessType(def)];}
 function specialChessVisual(def,color="w",label=""){
-  const type=specialChessType(def),mark=String(def?.name||def?.id||"?").trim().slice(0,1);
-  const title=label||def?.name||"Special piece";
+  const name=specialPieceName(def),type=specialChessType(def),mark=String(name||def?.id||"?").trim().slice(0,1);
+  const title=label||name||"Special piece";
   return '<span class="special-piece-icon special-piece-chess owner-'+color+'" title="'+title+'">'+pieceImgTag(color+type,"piece special-chess-image",color+type)+'<em>'+mark+'</em></span>';
 }
 window.specialChessVisual=specialChessVisual;
@@ -597,9 +597,19 @@ function isFakeKingDef(def){return Boolean(def?.fakeKing||specialAbility(def,"fa
 function isCountsAsKingDef(def){return Boolean(def?.countsAsKing||specialAbility(def,"royal_unit")?.params?.countsAsKing);}
 function fakeKingPenalty(def){const a=specialAbility(def,"fake_king_identity");return Number(def?.captureApPenalty??a?.params?.captureAPPenalty??a?.params?.captureApPenalty??0);}
 function pieceDef(p){ return p?.specialId?specialDef(p.specialId):PIECES[p?.type]; }
+function specialPieceName(def){return def?langText(`piece.${def.id}.name`,def.name||def.id):"Special piece";}
+function specialPieceDescription(def){return def?langText(`piece.${def.id}.description`,def.description||""):"";}
+function companyName(id,fallback=STOCKS[id]?.name||id){return langText(`company.${id}`,fallback);}
+function stockPieceName(type){return langText(`piece.standard.${type}`,PIECES[type]?.name||type);}
+function localizedNews(event){
+  const company=companyName(event.companyId||"market",event.company||event.companyId||"Market");
+  const text=event.eventType==="specialRestock"?langText("news.specialRestock","{piece} {count}개 입고",{piece:specialPieceName(specialDef(event.pieceId)),count:event.count}):langText(`news.${event.id}`,event.text||"");
+  return {company,text};
+}
 function pieceName(p,viewerColor=state.turn){
-  const def=pieceDef(p); if(!def)return "기물";
-  return p?.specialId&&isFakeKingDef(def)&&p.color!==viewerColor?"킹":def.name;
+  const def=pieceDef(p); if(!def)return langText("piece.unknown","기물");
+  if(p?.specialId)return isFakeKingDef(def)&&p.color!==viewerColor?langText("piece.standard.k","킹"):specialPieceName(def);
+  return stockPieceName(p.type);
 }
 function piecePrice(p){return Number(pieceDef(p)?.price||0);}
 function pieceCaptureReward(p){return Number(pieceDef(p)?.captureReward??pieceDef(p)?.price??0);}
@@ -677,11 +687,11 @@ function restockSpecialPieces(initial=false){
   if(!SpecialPieces.data)return;
   for(const def of SpecialPieces.list()){
     const amount=rollSpecialStock(def);state.specialStock[def.id]=amount;
-    if(amount>0&&(def.rarity==="신화"||def.rarity==="mythic"))addNews("신화급 입고",`${specialIcon(def)} ${def.name} ${amount}개 입고`);
+    if(amount>0&&(def.rarity==="신화"||def.rarity==="mythic"))addNews({id:`special-restock-${state.turnNo}-${def.id}`,eventType:"specialRestock",companyId:"market",pieceId:def.id,count:amount,text:`${specialPieceName(def)} ${amount}개 입고`});
   }
   for(const def of SpecialPieces.list()){
     if(String(def.rarity).toLowerCase()==="legendary"&&(state.specialStock[def.id]||0)>0){
-      addNews("특수기물 입고",`${specialIcon(def)} ${def.name} ${state.specialStock[def.id]}개 입고`);
+      addNews({id:`special-restock-${state.turnNo}-${def.id}`,eventType:"specialRestock",companyId:"market",pieceId:def.id,count:state.specialStock[def.id],text:`${specialPieceName(def)} ${state.specialStock[def.id]}개 입고`});
     }
   }
   const rareRestocked=["black_hole","chaebol_king","mounted_king","mounted_king_mk2"].some(id=>(state.specialStock[id]||0)>0);
@@ -841,7 +851,7 @@ function buildShop(){
   const el=document.getElementById("pieceShop"); el.innerHTML="";
   ["p","n","b","r","q"].forEach(t=>{
     const btn=document.createElement("button"); btn.className="shop-item";
-    btn.innerHTML=`<span class="shop-piece"><img id="shop-${t}" alt="${PIECES[t].name}"></span><b>${PIECES[t].name}</b><small>${fmt(PIECES[t].price)}</small>`;
+    btn.innerHTML=`<span class="shop-piece"><img id="shop-${t}" alt="${stockPieceName(t)}"></span><b>${stockPieceName(t)}</b><small>${fmt(PIECES[t].price)}</small>`;
     btn.addEventListener("click",()=>startPurchase(t));
     btn.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();showPieceInfo(normalPieceInfo({type:t}),null,true,t);}});
     btn.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
@@ -855,7 +865,8 @@ function buildSpecialShop(){
   el.innerHTML="";
   for(const def of SpecialPieces.list()){
     const btn=document.createElement("button");btn.className="shop-item special-shop-item";btn.dataset.specialId=def.id;
-    btn.innerHTML=`<span class="shop-piece special-shop-icon">${specialChessVisual(def,"w",def.name)}</span><b>${def.name}</b><small>${fmt(def.price)} · ${def.buyAP} AP</small><em class="special-stock" id="special-stock-${def.id}">재고 0</em>`;
+    const name=specialPieceName(def);
+    btn.innerHTML=`<span class="shop-piece special-shop-icon">${specialChessVisual(def,"w",name)}</span><b>${name}</b><small>${fmt(def.price)} · ${def.buyAP} AP</small><em class="special-stock" id="special-stock-${def.id}">${langText("shop.stock","재고 {count}",{count:0})}</em>`;
     btn.addEventListener("click",()=>startSpecialPurchase(def.id));
     btn.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();showPieceInfo(def,state.specialStock[def.id]||0,true,def.id,def.id);}});
     btn.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
@@ -865,7 +876,7 @@ function buildSpecialShop(){
 
 function buildStocks(){
   const sel=document.getElementById("stockSelect");
-  sel.innerHTML=Object.entries(STOCKS).map(([k,s])=>`<option value="${k}">${s.name}</option>`).join("");
+  sel.innerHTML=Object.entries(STOCKS).map(([k,s])=>`<option value="${k}">${companyName(k,s.name)}</option>`).join("");
 }
 
 function bindControls(){
@@ -976,10 +987,10 @@ function getOrbitalStrikeSquares(target,settings=CFG.orbitalStrike){
 window.getOrbitalStrikeSquares=getOrbitalStrikeSquares;
 function orbitalStrikeReady(){
   const cfg=CFG.orbitalStrike,p=current();
-  if(!cfg.enabled||!state.specialEnabled)return {ok:false,reason:"궤도 빔이 비활성화돼 있어."};
-  if(state.gameOver||!state.started)return {ok:false,reason:"게임이 시작되지 않았어."};
-  if(p.money<cfg.price)return {ok:false,reason:`자금 부족 (${fmt(cfg.price)} 필요)`};
-  if(p.ap<cfg.apCost)return {ok:false,reason:`AP 부족 (${cfg.apCost} 필요)`};
+  if(!cfg.enabled||!state.specialEnabled)return {ok:false,reason:langText("orbital.disabled","궤도 빔이 비활성화돼 있어.")};
+  if(state.gameOver||!state.started)return {ok:false,reason:langText("orbital.notStarted","게임이 시작되지 않았어.")};
+  if(p.money<cfg.price)return {ok:false,reason:langText("log.insufficientFunds","자금 부족 ({amount} 필요)",{amount:fmt(cfg.price)})};
+  if(p.ap<cfg.apCost)return {ok:false,reason:langText("orbital.apInsufficient","AP 부족 ({amount} 필요)",{amount:cfg.apCost})};
   return {ok:true};
 }
 function startOrbitalStrike(){
@@ -1015,17 +1026,18 @@ function startPurchase(type){
   if(current().ap<1) return log("기물 구매: AP 부족","bad");
   if(current().money<PIECES[type].price&&!hasCreditLine()) return log(`기물 구매: ${fmt(PIECES[type].price)} 필요`,`bad`);
   state.mode="buy"; state.pendingPiece=type; state.selected=null; state.legalTargets=[];
-  log(`${PIECES[type].name} 구매 위치를 선택해.`,"gold"); render();
+  log(langText("log.purchaseSelect","{piece} 구매 위치를 선택해.",{piece:stockPieceName(type)}),"gold"); render();
 }
 function startSpecialPurchase(id){
   if(multiplayerRole()==="spectator")return log("관전자는 구매할 수 없어.","bad");
   const def=specialDef(id),stock=state.specialStock[id]||0;
-  if(!def)return log("특수기물 데이터를 찾을 수 없어.","bad");
-  if(stock<=0)return log(`${def.name}: 품절`,"bad");
-  if(current().money<Number(def.price)&&!hasCreditLine())return log(`${def.name}: 돈 부족 (${fmt(def.price)} 필요)`,"bad");
-  if(current().ap<Number(def.buyAP))return log(`${def.name}: AP 부족 (${def.buyAP} 필요)`,"bad");
+  if(!def)return log(langText("log.pieceDataMissing","특수기물 데이터를 찾을 수 없어."),"bad");
+  const name=specialPieceName(def);
+  if(stock<=0)return log(`${name}: ${langText("shop.soldOut","품절")}`,"bad");
+  if(current().money<Number(def.price)&&!hasCreditLine())return log(langText("log.notEnoughFunds","{piece}: 돈 부족 ({amount} 필요)",{piece:name,amount:fmt(def.price)}),"bad");
+  if(current().ap<Number(def.buyAP))return log(langText("log.notEnoughAP","{piece}: AP 부족 ({amount} 필요)",{piece:name,amount:def.buyAP}),"bad");
   state.mode="special-buy";state.pendingSpecialId=id;state.pendingPiece=null;state.selected=null;state.legalTargets=[];
-  log(`${def.name} 구매 위치를 선택해.`,"gold");render();
+  log(langText("log.purchaseSelect","{piece} 구매 위치를 선택해.",{piece:name}),"gold");render();
 }
 function homeZone(color,r){ return color==="w" ? r>=6 : r<=1; }
 function finishPurchase(r,c){
@@ -1036,7 +1048,7 @@ function finishPurchase(r,c){
   if(!purchaseAndAP(price,1,"기물 구매")) return;
   state.board[r][c]=purchasedPiece(type,state.turn);
   playSound("buy");
-  log(`${sqName(r,c)}에 ${PIECES[type].name} 채용 -${fmt(price)}`);
+  log(langText("log.pieceHired","{square}: hired {piece} for -{price}",{square:sqName(r,c),piece:stockPieceName(type),price:fmt(price)}));
   state.mode=null;state.pendingPiece=null;render();
 }
 function finishSpecialPurchase(r,c){
@@ -1052,11 +1064,11 @@ function finishSpecialPurchase(r,c){
       const existing=state.board[rr][cc];
       if(existing?.color===state.turn&&(existing.type==="k"||isKingLike(existing)))state.board[rr][cc]=null;
     }
-    log(`${def.name}이(가) 기존 킹을 대체했어.`,"gold");
+    log(langText("log.kingReplaced","{piece} replaced the existing king.",{piece:specialPieceName(def)}),"gold");
   }
   state.board[r][c]=specialPiece(id,state.turn);
   playSound("buy");
-  log(`${sqName(r,c)}에 ${def.name} 배치 -${fmt(def.price)} / ${def.buyAP} AP · 다음 자기 턴에 활성화`);
+  log(langText("log.piecePlaced","{square}: placed {piece} for -{price} / {ap} AP. Activates on your next turn.",{square:sqName(r,c),piece:specialPieceName(def),price:fmt(def.price),ap:def.buyAP}));
   state.mode=null;state.pendingSpecialId=null;render();
 }
 
@@ -1376,8 +1388,9 @@ function executePieceAbility(id,source,target,passenger){
 }
 function renderTileInfo(key){
   const owner=state.properties[key]; const visits=state.visits[key]||0;
-  const tile=state.board[8-Number(key[1])][FILES.indexOf(key[0])],actions={paid_same_color_warp:"같은 색 칸으로 워프",paid_friendly_swap:"아군과 위치 교환",carry_friendly_piece:"아군 기물 운송",hostile_takeover:"인접 기물 인수"},ability=tile?.specialId?specialAbilities(specialDef(tile.specialId)).find(a=>actions[a.id]):null;
-  document.getElementById("tileInfo").innerHTML=`<b>${key}</b> · 방문 ${visits}회 · 가치 ${fmt(propertyPrice(key))} · 통행료 ${fmt(propertyToll(key))}<br>소유자: ${owner?(owner==="w"?"백":"흑"):"없음"}${ability&&tile.color===state.turn?`<br><button type="button" id="pieceAbilityBtn">${actions[ability.id]}</button>`:""}`;
+  const tile=state.board[8-Number(key[1])][FILES.indexOf(key[0])],actions={paid_same_color_warp:langText("board.actionWarp","같은 색 칸으로 워프"),paid_friendly_swap:langText("board.actionSwap","아군과 위치 교환"),carry_friendly_piece:langText("board.actionCarry","아군 기물 운송"),hostile_takeover:langText("board.actionTakeover","인접 기물 인수")},ability=tile?.specialId?specialAbilities(specialDef(tile.specialId)).find(a=>actions[a.id]):null;
+  const ownerName=owner?(owner==="w"?langText("game.white","백"):langText("game.black","흑")):langText("board.unowned","없음");
+  document.getElementById("tileInfo").innerHTML=`<b>${key}</b> · ${langText("board.visits","방문 {count}회",{count:visits})} · ${langText("board.value","가치 {amount}",{amount:fmt(propertyPrice(key))})} · ${langText("board.toll","통행료 {amount}",{amount:fmt(propertyToll(key))})}<br>${langText("board.owner","소유자")}: ${ownerName}${ability&&tile.color===state.turn?`<br><button type="button" id="pieceAbilityBtn">${actions[ability.id]}</button>`:""}`;
   document.getElementById("pieceAbilityBtn")?.addEventListener("click",()=>beginPieceAbility(ability.id));
 }
 
@@ -1456,11 +1469,11 @@ function instantPromote(){
   log(`${sqName(r,c)} 폰 즉시승급 → 퀸 -${fmt(CFG.promoteCost)} · 다음 자기 턴부터 활동`,"gold");render();
 }
 function startTeleport(){
-  if(!canEconomy()||!state.selected)return log("텔레포트할 자기 기물을 선택해.","bad");
+  if(!canEconomy()||!state.selected)return log(langText("log.teleportSelect","텔레포트할 자기 기물을 선택해."),"bad");
   const p=state.board[state.selected.r][state.selected.c];
   if(!p||p.color!==state.turn||isKingLike(p))return log("자기 기물(킹 제외)을 선택해.","bad");
   if(current().money<CFG.teleportCost||current().ap<2)return log(`즉시이동은 ${fmt(CFG.teleportCost)} + 2 AP 필요.`,"bad");
-  state.mode="teleport";log("빈 칸을 클릭하면 즉시이동 발동.","gold");render();
+  state.mode="teleport";log(langText("log.teleportTarget","빈 칸을 클릭하면 즉시이동 발동."),"gold");render();
 }
 function finishTeleport(r,c){
   if(!canEconomy()||!inBounds(r,c))return clearMode();
@@ -1480,8 +1493,9 @@ function buyInsurance(){
 function tradeStock(isBuy){
   if(!canEconomy())return; const key=document.getElementById("stockSelect").value; const qty=Math.max(1,Math.min(99,Number(document.getElementById("stockQty").value)||1));
   const p=current(), stock=STOCKS[key], total=Math.round(stock.price*qty);
-  if(p.ap<1)return log("주식 거래: AP 부족","bad");
-  if(isBuy){if(p.money<total){if(!hasCreditLine())return log("매수 자금 부족","bad");if(!purchaseAndAP(total,1,"주식 매수"))return;}else{p.money-=total;p.ap--;}p.holdings[key]+=qty;p.stockBasis[key]=Number(p.stockBasis?.[key]||0)+total;log(`${stock.name} ${qty}주 매수 -${fmt(total)}`);} else {if(p.holdings[key]<qty)return log("보유 주식 부족","bad");const average=Number(p.stockBasis?.[key]||0)/p.holdings[key];p.holdings[key]-=qty;p.stockBasis[key]=Math.max(0,Number(p.stockBasis?.[key]||0)-average*qty);p.money+=total;p.ap--;log(`${stock.name} ${qty}주 매도 +${fmt(total)}`,"good");}
+  const name=companyName(key,stock.name);
+  if(p.ap<1)return log(langText("log.stockTradeAP","Stock trading requires 1 AP."),"bad");
+  if(isBuy){if(p.money<total){if(!hasCreditLine())return log(langText("market.notEnoughFunds","매수 자금 부족"),"bad");if(!purchaseAndAP(total,1,"주식 매수"))return;}else{p.money-=total;p.ap--;}p.holdings[key]+=qty;p.stockBasis[key]=Number(p.stockBasis?.[key]||0)+total;log(langText("market.purchaseLog","{company} {count}주 매수 -{amount}",{company:name,count:qty,amount:fmt(total)}));} else {if(p.holdings[key]<qty)return log(langText("market.notEnoughShares","보유 주식 부족"),"bad");const average=Number(p.stockBasis?.[key]||0)/p.holdings[key];p.holdings[key]-=qty;p.stockBasis[key]=Math.max(0,Number(p.stockBasis?.[key]||0)-average*qty);p.money+=total;p.ap--;log(langText("market.saleLog","{company} {count}주 매도 +{amount}",{company:name,count:qty,amount:fmt(total)}),"good");}
   render();
 }
 function moveMarket(){
@@ -1518,10 +1532,10 @@ function addNews(eventOrCompany,text){
   showHeadline(0, false);
   return event;
 }
-function headlineString(n){return n?`${n.company}  ·  ${n.text}`:"시장 개장 준비 중…";}
+function headlineString(n){if(!n)return langText("news.waiting","시장 개장 준비 중...");const item=localizedNews(n);return `${item.company} - ${item.text}`;}
 function showHeadline(index=0,instant=false){
   const el=document.getElementById("headlineText"); if(!el) return;
-  if(!state.news.length){el.textContent="시장 개장 준비 중…";return;}
+  if(!state.news.length){el.textContent=langText("news.waiting","시장 개장 준비 중...");return;}
   state.headlineIndex=((index%state.news.length)+state.news.length)%state.news.length;
   const apply=()=>{el.textContent=headlineString(state.news[state.headlineIndex]);el.classList.remove("slide-out");el.classList.add("slide-in");setTimeout(()=>el.classList.remove("slide-in"),320);};
   if(instant){el.textContent=headlineString(state.news[state.headlineIndex]);return;}
@@ -1636,7 +1650,7 @@ function fenFor(side){
 
 function initStockfish(){
   const status=document.getElementById("engineStatus");
-  const labels={loading:["○ Stockfish 로딩 중…","engine-pill"],ready:["● Stockfish 준비됨","engine-pill online"],analyzing:["◌ Stockfish 분석 중…","engine-pill online"],error:["⚠ Stockfish 분석 불가","engine-pill offline"],destroyed:["⚠ Stockfish 분석 불가","engine-pill offline"]};
+  const labels={loading:[langText("engine.loading","○ Stockfish 로딩 중…"),"engine-pill"],ready:[langText("engine.ready","● Stockfish 준비됨"),"engine-pill online"],analyzing:[langText("engine.analyzing","◌ Stockfish 분석 중…"),"engine-pill online"],error:[langText("engine.error","⚠ Stockfish 분석 불가"),"engine-pill offline"],destroyed:[langText("engine.error","⚠ Stockfish 분석 불가"),"engine-pill offline"]};
   stockfish.setStatusHandler(({status:engineStatus})=>{const [text,className]=labels[engineStatus]||labels.error;if(status){status.textContent=text;status.className=className;}state.engineReady=engineStatus==="ready";});
   stockfish.init().catch(error=>{
     state.engineReady=false;
@@ -1925,7 +1939,7 @@ function render(){
   for(const t of ["p","n","b","r","q"]){const img=document.getElementById(`shop-${t}`);if(img){const key=state.turn+t;img.src=IMG[key];img.dataset.fallback=IMG_FALLBACK[key];}}
   for(const def of SpecialPieces.list()){
     const stockEl=document.getElementById(`special-stock-${def.id}`),button=document.querySelector(`[data-special-id="${def.id}"]`),stock=state.specialStock[def.id]||0;
-    if(stockEl)stockEl.textContent=stock?`재고 ${stock}`:"품절";
+    if(stockEl)stockEl.textContent=stock?langText("shop.stock","재고 {count}",{count:stock}):langText("shop.soldOut","품절");
     if(button)button.classList.toggle("sold-out",stock<=0);
   }
   attachImageFallbacks(document);
@@ -1933,50 +1947,53 @@ function render(){
   document.getElementById("whiteMoney").textContent=fmt(w.money);document.getElementById("blackMoney").textContent=fmt(b.money);
   document.getElementById("whiteSalary").textContent=fmt(w.salary);document.getElementById("blackSalary").textContent=fmt(b.salary);
   document.getElementById("whiteTax").textContent=fmt(countTax("w"));document.getElementById("blackTax").textContent=fmt(countTax("b"));
-  document.getElementById("whitePieceScore").textContent=`${countPieceScore("w")}점`;
-  document.getElementById("blackPieceScore").textContent=`${countPieceScore("b")}점`;
+  document.getElementById("whitePieceScore").textContent=langText("game.score","{score}점",{score:countPieceScore("w")});
+  document.getElementById("blackPieceScore").textContent=langText("game.score","{score}점",{score:countPieceScore("b")});
   document.getElementById("whiteDebt").textContent=fmt(state.players.w.creditDebt||0);
   document.getElementById("blackDebt").textContent=fmt(state.players.b.creditDebt||0);
   document.getElementById("whiteCard").classList.toggle("active",state.turn==="w");document.getElementById("blackCard").classList.toggle("active",state.turn==="b");
-  document.getElementById("turnLabel").textContent=`${state.turn==="w"?"백":"흑"}의 턴${activeInCheck()?" — 체크!":""}`;
+  const side=state.turn==="w"?langText("game.white","백"):langText("game.black","흑");
+  document.getElementById("turnLabel").textContent=langText("game.turn","{side}의 턴",{side})+(activeInCheck()?` - ${langText("game.check","체크!")}`:"");
   document.getElementById("apValue").textContent=`${p.ap} / ${CFG.maxAP}`;
-  document.getElementById("moveState").textContent=`체스 수: ${p.moveUsed?"사용 완료":"사용 가능"}`;
-  document.getElementById("selectedSquare").textContent=state.selected?sqName(state.selected.r,state.selected.c):"없음";
+  document.getElementById("moveState").textContent=langText("game.moveState","체스 수: {state}",{state:p.moveUsed?langText("game.moveUsed","사용 완료"):langText("game.moveAvailable","사용 가능")});
+  document.getElementById("selectedSquare").textContent=state.selected?sqName(state.selected.r,state.selected.c):langText("board.none","없음");
   document.getElementById("salaryUpgradeText").textContent=langText("economy.salarySummary","\ud604\uc7ac {current}/\ud134 | \uc778\uc0c1 \ud6c4 {next}/\ud134 | \ube44\uc6a9 {cost} | 1 AP",{current:fmt(p.salary),next:fmt(p.salary+CFG.salaryRaise),cost:fmt(salaryCost(p))});
   const actionSmall=id=>document.querySelector('#'+id+' small');
   const jobSmall=actionSmall("jobBtn");if(jobSmall)jobSmall.textContent=langText("economy.jobReward","+ {amount} \xb7 1 AP",{amount:fmt(CFG.jobPay)});
   const depositButton=document.getElementById("depositBtn");if(depositButton){depositButton.querySelector("b").textContent=langText("economy.depositTitle","\uc801\uae08 {amount}",{amount:fmt(CFG.depositAmount)});depositButton.querySelector("small").textContent=langText("economy.depositMaturity","4\ud134 \ub4a4 +{rate}%",{rate:Math.round((CFG.depositReturn-1)*100)});}
   const ventureButton=document.getElementById("ventureBtn");if(ventureButton){ventureButton.querySelector("b").textContent=langText("economy.ventureTitle","\ubca4\ucc98 \ud22c\uc790 {amount}",{amount:fmt(CFG.ventureAmount)});ventureButton.querySelector("small").textContent=langText("economy.ventureMaturity","3\ud134 \ub4a4 {minimum}~{maximum}\ubc30",{minimum:CFG.ventureMinReturn.toFixed(2),maximum:CFG.ventureMaxReturn.toFixed(2)});}
 
-  document.getElementById("insuranceStatus").innerHTML=`백 보험: ${w.insurance?"<strong>보유</strong>":"없음"} · 흑 보험: ${b.insurance?"<strong>보유</strong>":"없음"}`;
+  document.getElementById("insuranceStatus").textContent=langText("insurance.status","백 보험: {white} · 흑 보험: {black}",{white:langText(w.insurance?"insurance.owned":"insurance.none",w.insurance?"보유":"없음"),black:langText(b.insurance?"insurance.owned":"insurance.none",b.insurance?"보유":"없음")});
   const drawBtn=document.getElementById("drawBtn");
   if(drawBtn){
     drawBtn.textContent=!state.drawOffer?langText("button.drawRequest","\ubb34\uc2b9\ubd80 \uc694\uccad"):state.drawOffer===state.turn?langText("button.drawCancel","\uc694\uccad \ucde8\uc18c"):langText("button.drawAccept","\ubb34\uc2b9\ubd80 \uc2b9\uc778");
     drawBtn.disabled=state.gameOver;
   }
   const orbitalBtn=document.getElementById("orbitalStrikeBtn"),orbitalStatus=document.getElementById("orbitalStatus"),orbitalReady=orbitalStrikeReady();
-  if(orbitalBtn){orbitalBtn.disabled=!orbitalReady.ok||state.mode==="orbital-targeting"||state.gameOver;orbitalBtn.title=orbitalReady.ok?"궤도 플랫폼 접속":"궤도 빔 사용 불가: "+orbitalReady.reason;}
-  if(orbitalStatus)orbitalStatus.textContent=state.mode==="orbital-targeting"?"조준 중 · 클릭 발사 / ESC·우클릭 취소":orbitalReady.ok?"궤도 플랫폼 접속 가능":orbitalReady.reason;
+  const orbitalReason=orbitalReady.reason;
+  if(orbitalBtn){orbitalBtn.disabled=!orbitalReady.ok||state.mode==="orbital-targeting"||state.gameOver;orbitalBtn.title=orbitalReady.ok?langText("orbital.connecting","궤도 플랫폼 접속"):langText("orbital.unavailable","궤도 빔 사용 불가: {reason}",{reason:orbitalReason});}
+  if(orbitalStatus)orbitalStatus.textContent=state.mode==="orbital-targeting"?langText("orbital.targeting","조준 중 · 클릭 발사 / ESC·우클릭 취소"):orbitalReady.ok?langText("orbital.ready","궤도 플랫폼 접속 가능"):orbitalReason;
   renderMaturities();renderStocks();renderAnnotations();
   document.getElementById("endTurnBtn").disabled=state.gameOver;
   if(multiplayerRole()==="host")window.multiplayer.sendState(serializeGameState());
 }
 function renderMaturities(){
   const p=current();const items=[];
-  for(const d of p.deposits)items.push(`적금 ${fmt(d.principal)} · ${Math.max(0,d.due-p.ownTurns)}회 내 턴 남음`);
-  for(const v of p.ventures)items.push(`벤처 ${fmt(v.principal)} · ${Math.max(0,v.due-p.ownTurns)}회 내 턴 남음`);
-  document.getElementById("maturityList").textContent=items.length?items.join(" / "):"진행 중인 적금·투자 없음";
+  for(const d of p.deposits)items.push(langText("maturity.deposit","적금 {amount} · {turns}회 내 턴 남음",{amount:fmt(d.principal),turns:Math.max(0,d.due-p.ownTurns)}));
+  for(const v of p.ventures)items.push(langText("maturity.venture","벤처 {amount} · {turns}회 내 턴 남음",{amount:fmt(v.principal),turns:Math.max(0,v.due-p.ownTurns)}));
+  document.getElementById("maturityList").textContent=items.length?items.join(" / "):langText("maturity.empty","진행 중인 적금·투자 없음");
 }
 function renderStocks(){
   const ticker=document.getElementById("ticker");ticker.innerHTML="";
   for(const [k,s] of Object.entries(STOCKS)){
     const pct=((s.price-s.last)/s.last*100)||0;const cls=pct>=0?"up":"down";const arrow=pct>=0?"▲":"▼";
-    ticker.innerHTML+=`<div class="ticker-row"><span>${s.name}</span><span class="price">${fmt(s.price)}</span><span class="delta ${cls}">${arrow} ${Math.abs(pct).toFixed(1)}%</span></div>`;
+    ticker.innerHTML+=`<div class="ticker-row"><span>${companyName(k,s.name)}</span><span class="price">${fmt(s.price)}</span><span class="delta ${cls}">${arrow} ${Math.abs(pct).toFixed(1)}%</span></div>`;
   }
-  const p=current();const portfolio=Object.entries(p.holdings).filter(([,q])=>q>0).map(([k,q])=>`${STOCKS[k].name} ${q}주 (${fmt(STOCKS[k].price*q)})`);
-  document.getElementById("portfolio").textContent=portfolio.length?`${state.turn==="w"?"백":"흑"} 보유: `+portfolio.join(" · "):"보유 주식 없음";
-  document.getElementById("newsFeed").innerHTML=state.news.map(n=>`<div class="news-item"><b>${n.company}</b> — ${n.text}</div>`).join("");
-  document.getElementById("marketTurn").textContent=`T${state.turnNo}`;
+  const p=current();const portfolio=Object.entries(p.holdings).filter(([,q])=>q>0).map(([k,q])=>langText("market.shares","{count}주",{count:q})+` ${companyName(k,STOCKS[k].name)} (${fmt(STOCKS[k].price*q)})`);
+  const side=state.turn==="w"?langText("game.white","백"):langText("game.black","흑");
+  document.getElementById("portfolio").textContent=portfolio.length?langText("market.ownedBy","{side} 보유: {items}",{side,items:portfolio.join(" · ")}):langText("market.portfolioEmpty","보유 주식 없음");
+  document.getElementById("newsFeed").innerHTML=state.news.map(n=>{const item=localizedNews(n);return `<div class="news-item"><b>${item.company}</b> — ${item.text}</div>`;}).join("");
+  document.getElementById("marketTurn").textContent=langText("market.turn","시장 턴 {turn}",{turn:state.turnNo});
 }
 
 function log(text,type=""){

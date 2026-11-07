@@ -2,8 +2,16 @@
   "use strict";
   const DEFAULT_LOCALE="ko_kr";
   const SUPPORTED_LOCALES=new Set([DEFAULT_LOCALE,"en_us"]);
+  const defaults=new WeakMap();
   let messages={};
   let currentLocale=DEFAULT_LOCALE;
+
+  function original(element,key,value){
+    let values=defaults.get(element);
+    if(!values){values={};defaults.set(element,values);}
+    if(!(key in values))values[key]=value;
+    return values[key];
+  }
 
   function text(key,fallback,values={}){
     let value=typeof messages[key]==="string"?messages[key]:fallback;
@@ -14,15 +22,20 @@
   function apply(root=document){
     root.querySelectorAll("[data-i18n]").forEach(element=>{
       const translated=messages[element.dataset.i18n];
-      if(typeof translated==="string")element.textContent=translated;
+      element.textContent=typeof translated==="string"?translated:original(element,"text",element.textContent);
     });
     root.querySelectorAll("[data-i18n-placeholder]").forEach(element=>{
       const translated=messages[element.dataset.i18nPlaceholder];
-      if(typeof translated==="string")element.placeholder=translated;
+      element.placeholder=typeof translated==="string"?translated:original(element,"placeholder",element.placeholder);
     });
     root.querySelectorAll("[data-i18n-value]").forEach(element=>{
       const translated=messages[element.dataset.i18nValue];
-      if(typeof translated==="string")element.value=translated;
+      element.value=typeof translated==="string"?translated:original(element,"value",element.value);
+    });
+    root.querySelectorAll("[data-i18n-aria]").forEach(element=>{
+      const translated=messages[element.dataset.i18nAria];
+      const fallback=original(element,"aria-label",element.getAttribute("aria-label")||"");
+      element.setAttribute("aria-label",typeof translated==="string"?translated:fallback);
     });
   }
 
