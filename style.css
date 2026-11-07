@@ -391,3 +391,19 @@ footer{display:block}
 @keyframes vfxScan{0%{opacity:0;clip-path:inset(0 50% 0 50%)}35%{opacity:1;clip-path:inset(0)}100%{opacity:0}}
 @keyframes vfxFlicker{0%{opacity:0}15%{opacity:1}25%{opacity:.2}40%{opacity:1}55%{opacity:.35}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.move-grade-overlay *{animation-duration:.35s!important;animation-iteration-count:1!important}.vfx-particles,.vfx-streaks{display:none}.grade-blunder .vfx-backdrop{animation-name:vfxBackdrop}}
+
+
+.lobby-economy-settings{margin:10px 0;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:rgba(248,246,240,.72)}
+.lobby-economy-settings summary{cursor:pointer;font-size:12px;font-weight:800;color:var(--gold)}
+.lobby-economy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px}
+.lobby-economy-grid label{display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)}
+.lobby-economy-grid input{width:100%;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px;background:#fffdf8;color:var(--text)}
+.special-piece-icon.special-piece-chess{width:82%;height:82%;padding:0;border:0;border-radius:0;background:transparent;overflow:visible}
+.special-piece-chess .special-chess-image{width:100%;height:100%;object-fit:contain}
+.special-piece-chess em{right:-5px;bottom:-3px;width:17px;height:17px;display:grid;place-items:center;font:800 9px/1 system-ui,sans-serif;border:1px solid rgba(80,70,45,.55);box-shadow:0 1px 3px rgba(0,0,0,.22)}
+.special-shop-icon{width:40px;height:40px;flex:0 0 40px}
+.special-shop-icon .special-chess-image{width:100%;height:100%;filter:drop-shadow(0 2px 1px rgba(0,0,0,.18))}
+.piece-info-title>.special-piece-chess{width:50px;height:50px;flex:0 0 50px}
+.piece-info-title>.special-piece-chess em{right:-3px;bottom:-2px}
+@media(max-width:720px){.lobby-economy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.lobby-language-picker{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--muted);font-size:12px}.lobby-language-picker select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}

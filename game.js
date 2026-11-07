@@ -14,34 +14,39 @@ let DEBUG_STOCKFISH = false;
 try{DEBUG_STOCKFISH=localStorage.getItem("capitalistChessStockfishDebug")==="true";}catch(_){ }
 window.DEBUG_STOCKFISH=DEBUG_STOCKFISH;
 const CFG = {
-  startMoney: 1200,
-  startSalary: 220,
+  startMoney: 1600,
+  startSalary: 190,
   maxAP: 3,
-  jobPay: 140,
-  salaryRaise: 40,
-  salaryBaseCost: 500,
-  salaryUpgradeMultiplier: 1.45,
-  bankruptcy: -1500,
-  propertyBase: 180,
-  propertyVisitPrice: 75,
+  jobPay: 100,
+  salaryRaise: 30,
+  salaryBaseCost: 800,
+  salaryUpgradeMultiplier: 1.65,
+  depositAmount: 500,
+  depositReturn: 1.10,
+  ventureAmount: 300,
+  ventureMinReturn: 0.5,
+  ventureMaxReturn: 1.75,
+  bankruptcy: -900,
+  propertyBase: 140,
+  propertyVisitPrice: 50,
   tollBase: 20,
-  tollVisitIncrement: 25,
+  tollVisitIncrement: 15,
   sellRatio: 0.60,
-  brilliantBonus: 350,
-  bestBonus: 160,
+  brilliantBonus: 180,
+  bestBonus: 80,
   promoteCost: 1500,
-  teleportCost: 800,
-  insuranceCost: 1200,
-  orbitalStrike: {enabled:true,price:50000,apCost:10,radius:1}
+  teleportCost: 900,
+  insuranceCost: 2000,
+  orbitalStrike: {enabled:true,price:24000,apCost:3,radius:1}
 };
 const CLOCK_INITIAL_SECONDS = 900;
 let orbitalTargetCancel=null;
 const ENGINE_EVAL_CONFIG = {
   depth: 10,
   confidenceMinimum: 0.6,
-  brilliantBonus: 350,
-  bestBonus: 160,
-  goodBonus: 60,
+  brilliantBonus: 180,
+  bestBonus: 80,
+  goodBonus: 30,
   brilliantMaxLoss: 25,
   bestMaxLoss: 45,
   interestingMaxLoss: 60,
@@ -89,31 +94,21 @@ const STOCKS = {
   bed: {name:"킹 침대", price:96, last:96}
 };
 
-const NEWS_POOL = [
-  ["pastry", +0.13, "앙파상 제과, 신규 과자 ‘킹맛 쓰냌’ 출시… 반응 좋아"],
-  ["pastry", -0.18, "앙파상 제과, 원재료 가격 급등… 마진 악화 우려"],
-  ["check", -0.19, "체크전자, 부품 사기 논란에 소비자 불만 커져…"],
-  ["check", +0.12, "체크전자, 차세대 보드 센서 공개… 예약 주문 몰려"],
-  ["castle", +0.14, "캐슬링 공업, 새로운 금속 가공 기술 공개… ‘매우 효율적’"],
-  ["castle", -0.10, "캐슬링 공업, 룩 생산라인 정비로 출하 지연"],
-  ["knight", +0.22, "나이트 AI, Plus 요금제 가격 인하… 이용객 폭주"],
-  ["knight", -0.15, "나이트 AI, 말이 자꾸 L자로 답한다는 품질 논란"],
-  ["bed", -0.31, "킹 침대, 매트리스 유해물질 논란 거세져… 주가 폭락"],
-  ["bed", +0.18, "킹 침대, 왕실 납품 계약 체결… 실적 기대감 상승"]
-];
-const NEWS = NEWS_POOL.map(([companyId,effect,text],index)=>({id:`market-${index+1}`,companyId,effect,text}));
-const NEWS_HISTORY_LIMIT = 8;
+let NEWS=[];
+const NEWS_HISTORY_LIMIT = 12;
 
 function makePlayer(color) {
   return {
     color,
     money: CFG.startMoney,
+    creditDebt: 0,
     salary: CFG.startSalary,
     salaryLevel: 0,
     ap: CFG.maxAP,
     moveUsed: false,
     insurance: false,
     holdings: Object.fromEntries(Object.keys(STOCKS).map(k=>[k,0])),
+    stockBasis: Object.fromEntries(Object.keys(STOCKS).map(k=>[k,0])),
     deposits: [],
     ventures: [],
     ownTurns: 0
@@ -231,6 +226,7 @@ function serializeGameState(){
     stockfishEnabled:state.stockfishEnabled,
     specialEnabled:state.specialEnabled,
     orbitalSettings:state.orbitalSettings,
+    economySettings:economySettingsSnapshot(),
     revision:state.engineRevision,
     board:state.board,
     turn:state.turn,
@@ -249,12 +245,41 @@ function serializeGameState(){
     recentNewsIds:state.recentNewsIds
   }));
 }
+function economySettingsSnapshot(){
+  return {
+    jobPay:CFG.jobPay,
+    salaryRaise:CFG.salaryRaise,
+    salaryBaseCost:CFG.salaryBaseCost,
+    salaryUpgradeMultiplier:CFG.salaryUpgradeMultiplier,
+    depositAmount:CFG.depositAmount,
+    depositReturn:CFG.depositReturn,
+    ventureAmount:CFG.ventureAmount,
+    ventureMinReturn:CFG.ventureMinReturn,
+    ventureMaxReturn:CFG.ventureMaxReturn
+  };
+}
+function applyEconomySettings(settings={}){
+  const number=(key,fallback,min,max)=>{
+    const value=Number(settings[key]);
+    return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
+  };
+  CFG.jobPay=number("jobPay",CFG.jobPay,0,100000);
+  CFG.salaryRaise=number("salaryRaise",CFG.salaryRaise,0,100000);
+  CFG.salaryBaseCost=number("salaryBaseCost",CFG.salaryBaseCost,0,1000000);
+  CFG.salaryUpgradeMultiplier=number("salaryUpgradeMultiplier",CFG.salaryUpgradeMultiplier,1,10);
+  CFG.depositAmount=number("depositAmount",CFG.depositAmount,0,1000000);
+  CFG.depositReturn=number("depositReturn",CFG.depositReturn,1,10);
+  CFG.ventureAmount=number("ventureAmount",CFG.ventureAmount,0,1000000);
+  CFG.ventureMinReturn=number("ventureMinReturn",CFG.ventureMinReturn,0,20);
+  CFG.ventureMaxReturn=Math.max(CFG.ventureMinReturn,number("ventureMaxReturn",CFG.ventureMaxReturn,0,20));
+}
 function applyGameState(snapshot){
   if(!snapshot||snapshot.schemaVersion!==1)return false;
+  if(snapshot.economySettings)applyEconomySettings(snapshot.economySettings);
   const wasStarted=state.started;
-  state.started=Boolean(snapshot.started);state.stockfishEnabled=snapshot.stockfishEnabled!==false;state.specialEnabled=snapshot.specialEnabled!==false;if(snapshot.orbitalSettings){state.orbitalSettings={...CFG.orbitalStrike,...snapshot.orbitalSettings};Object.assign(CFG.orbitalStrike,state.orbitalSettings);}document.querySelector(".shop-panel")?.classList.toggle("special-disabled",!state.specialEnabled);
+  state.started=Boolean(snapshot.started);state.stockfishEnabled=snapshot.stockfishEnabled!==false;state.specialEnabled=snapshot.specialEnabled!==false;if(snapshot.orbitalSettings){state.orbitalSettings={...CFG.orbitalStrike,...snapshot.orbitalSettings};Object.assign(CFG.orbitalStrike,state.orbitalSettings);}CFG.orbitalStrike.apCost=CFG.maxAP;state.orbitalSettings.apCost=CFG.maxAP;document.querySelector(".shop-panel")?.classList.toggle("special-disabled",!state.specialEnabled);
   state.board=snapshot.board||state.board;state.turn=snapshot.turn||state.turn;state.turnNo=Number(snapshot.turnNo||state.turnNo);
-  state.players=snapshot.players||state.players;state.visits=snapshot.visits||{};state.properties=snapshot.properties||{};state.lastMove=snapshot.lastMove||null;
+  state.players=snapshot.players||state.players;for(const color of ["w","b"]){const player=state.players[color];player.creditDebt=Number(player.creditDebt||0);player.stockBasis||=Object.fromEntries(Object.keys(STOCKS).map(key=>[key,0]));player.holdings||=Object.fromEntries(Object.keys(STOCKS).map(key=>[key,0]));}state.visits=snapshot.visits||{};state.properties=snapshot.properties||{};state.lastMove=snapshot.lastMove||null;
   const wasGameOver=state.gameOver;state.gameOver=Boolean(snapshot.gameOver);state.gameResult=snapshot.gameResult||null;state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
   state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();if(state.started&&!wasStarted){document.getElementById("lobbyScreen")?.classList.add("hidden");startTurnTimer();}if(state.gameOver&&!wasGameOver&&state.gameResult)showGameResult();return true;
 }
@@ -286,6 +311,10 @@ window.handleMultiplayerAction=function(action){
   if(action.type==="teleport"){
     if(!multiplayerOwnsSquare(action.selected))return;
     state.selected=action.selected;return finishTeleport(action.r,action.c);
+  }
+  if(action.type==="pieceAbility"){
+    if(!multiplayerOwnsSquare(action.source))return;
+    return executePieceAbility(action.id,action.source,action.target,action.passenger);
   }
   if(["job","salary","deposit","venture","insurance","promote","buyProperty","sellPiece","stockBuy","stockSell"].includes(action.type)){
     if(action.selected&&!multiplayerOwnsSquare(action.selected))return;
@@ -368,10 +397,10 @@ window.cheat={
     showMoveGradeEffect({grade:key,bonus:value,square:state.lastMove,moveId:`cheat-${Date.now()}`});
     if(key==="brilliant")playSound("brilliant");
   },
-  brilliant(bonus=350){this.effect("brilliant",bonus);},
-  best(bonus=160){this.effect("best",bonus);},
+  brilliant(bonus=CFG.brilliantBonus){this.effect("brilliant",bonus);},
+  best(bonus=CFG.bestBonus){this.effect("best",bonus);},
   excellent(bonus=0){this.effect("excellent",bonus);},
-  good(bonus=60){this.effect("good",bonus);},
+  good(bonus=ENGINE_EVAL_CONFIG.goodBonus){this.effect("good",bonus);},
   inaccuracy(){this.effect("inaccuracy",0);},
   mistake(){this.effect("mistake",0);},
   blunder(){this.effect("blunder",0);},
@@ -388,25 +417,108 @@ window.cheat.addClock=(color,seconds)=>{
   state.clock[normalized]=Math.max(0,state.clock[normalized]+(Number(seconds)||0));renderTurnTimer();
 };
 
+function lobbyNumber(id,fallback,min,max){
+  const input=document.getElementById(id);
+  if(!input||input.value.trim()==="")return fallback;
+  const parsed=Number(input.value);
+  if(!Number.isFinite(parsed))return fallback;
+  const value=Math.max(min,Math.min(max,parsed));
+  input.value=String(value);
+  return value;
+}
 function setupLobby(){
-  const lobby=document.getElementById("lobbyScreen"),single=document.getElementById("singleModeBtn"),multi=document.getElementById("multiModeBtn"),hubTitle=document.querySelector(".lobby-hub-head h2"),internet=document.getElementById("lobbyInternetStatus"),connection=document.getElementById("lobbyConnectionStatus"),roomStatus=document.getElementById("lobbyRoomStatus"),tools=document.getElementById("lobbyMultiplayerTools"),start=document.getElementById("lobbyStartBtn");
+  const lobby=document.getElementById("lobbyScreen");
+  const single=document.getElementById("singleModeBtn");
+  const multi=document.getElementById("multiModeBtn");
+  const hubTitle=document.querySelector(".lobby-hub-head h2");
+  const internet=document.getElementById("lobbyInternetStatus");
+  const connection=document.getElementById("lobbyConnectionStatus");
+  const roomStatus=document.getElementById("lobbyRoomStatus");
+  const tools=document.getElementById("lobbyMultiplayerTools");
+  const start=document.getElementById("lobbyStartBtn");
   if(!lobby||!single||!multi||!start)return;
   let mode="single";
-  const update=()=>{const isMulti=mode==="multi";single.classList.toggle("active",!isMulti);multi.classList.toggle("active",isMulti);if(hubTitle)hubTitle.textContent=isMulti?"멀티플레이 허브":"싱글플레이 허브";if(connection)connection.textContent=isMulti?(multiplayerRole()?`온라인 방 · ${multiplayerRole()==="host"?"Host":"Guest"}`:"방 연결 대기") : "로컬 게임";tools?.classList.toggle("hidden",!isMulti);start.textContent=isMulti?"멀티플레이 시작":"싱글플레이 시작";start.disabled=isMulti&&!multiplayerRole();document.querySelectorAll(".lobby-settings input,.lobby-rules input").forEach(input=>input.disabled=isMulti&&multiplayerRole()==="guest");};
-  const apply=()=>{const hostRole=multiplayerRole();if(mode==="multi"&&hostRole==="guest")return;CFG.startMoney=Math.max(0,Number(document.getElementById("lobbyMoney")?.value)||1200);CFG.startSalary=Math.max(0,Number(document.getElementById("lobbySalary")?.value)||220);CFG.maxAP=Math.max(1,Number(document.getElementById("lobbyAP")?.value)||3);const seconds=Math.max(60,Math.round((Number(document.getElementById("lobbyClock")?.value)||15)*60));state.stockfishEnabled=document.getElementById("lobbyStockfish")?.checked!==false;state.specialEnabled=document.getElementById("lobbySpecialPieces")?.checked!==false;CFG.orbitalStrike.enabled=document.getElementById("lobbyOrbitalEnabled")?.checked!==false;CFG.orbitalStrike.price=Math.max(0,Number(document.getElementById("lobbyOrbitalPrice")?.value)||50000);CFG.orbitalStrike.apCost=Math.max(1,Number(document.getElementById("lobbyOrbitalAP")?.value)||10);state.orbitalSettings={...CFG.orbitalStrike};for(const color of ["w","b"]){state.players[color].money=CFG.startMoney;state.players[color].salary=CFG.startSalary;state.players[color].salaryLevel=0;state.players[color].ap=CFG.maxAP;}state.clock={w:seconds,b:seconds};state.turnTimeLeft=seconds;document.querySelector(".shop-panel")?.classList.toggle("special-disabled",!state.specialEnabled);};
-  const begin=()=>{const role=multiplayerRole();if(mode==="multi"&&!role)return;if(mode!=="multi"&&!role||mode==="multi"&&!['guest','spectator'].includes(role))apply();state.started=true;lobby.classList.add("hidden");render();startTurnTimer();if(role==="host")window.multiplayer.sendState(serializeGameState());};
-  single.onclick=()=>{mode="single";renderInternet("offline");update();};multi.onclick=()=>{mode="multi";renderInternet(window.multiplayer?.status||"offline");update();};start.onclick=begin;
+  const update=()=>{
+    const isMulti=mode==="multi",role=multiplayerRole();
+    single.classList.toggle("active",!isMulti);
+    multi.classList.toggle("active",isMulti);
+    if(hubTitle)hubTitle.textContent=langText(isMulti?"lobby.multiHub":"lobby.hubTitle",isMulti?"\uba40\ud2f0\ud50c\ub808\uc774 \ud5c8\ube0c":"\uc2f1\uae00\ud50c\ub808\uc774 \ud5c8\ube0c");
+    if(connection)connection.textContent=isMulti?(role?langText("lobby.onlineRoom","\uc628\ub77c\uc778 \ubc29")+" | "+(role==="host"?"Host":"Guest"):langText("lobby.waitingRoom","\ubc29 \uc5f0\uacb0 \ub300\uae30")):langText("lobby.localGame","\ub85c\uceec \uac8c\uc784");
+    tools?.classList.toggle("hidden",!isMulti);
+    start.textContent=langText(isMulti?"lobby.startMulti":"lobby.startSingle",isMulti?"\uba40\ud2f0\ud50c\ub808\uc774 \uc2dc\uc791":"\uc2f1\uae00\ud50c\ub808\uc774 \uc2dc\uc791");
+    start.disabled=isMulti&&!role;
+    document.querySelectorAll(".lobby-settings input,.lobby-rules input,.lobby-economy-settings input").forEach(input=>input.disabled=isMulti&&role==="guest");
+  };
+  const apply=()=>{
+    const hostRole=multiplayerRole();
+    if(mode==="multi"&&hostRole==="guest")return;
+    CFG.startMoney=lobbyNumber("lobbyMoney",1600,0,1000000);
+    CFG.startSalary=lobbyNumber("lobbySalary",190,0,1000000);
+    CFG.maxAP=lobbyNumber("lobbyAP",3,1,9);
+    const seconds=Math.max(60,Math.round(lobbyNumber("lobbyClock",15,1,180)*60));
+    applyEconomySettings({
+      jobPay:lobbyNumber("lobbyJobPay",CFG.jobPay,0,100000),
+      salaryRaise:lobbyNumber("lobbySalaryRaise",CFG.salaryRaise,0,100000),
+      salaryBaseCost:lobbyNumber("lobbySalaryBaseCost",CFG.salaryBaseCost,0,1000000),
+      salaryUpgradeMultiplier:lobbyNumber("lobbySalaryMultiplier",CFG.salaryUpgradeMultiplier,1,10),
+      depositAmount:lobbyNumber("lobbyDepositAmount",CFG.depositAmount,0,1000000),
+      depositReturn:1+lobbyNumber("lobbyDepositReturn",Math.round((CFG.depositReturn-1)*100),0,900)/100,
+      ventureAmount:lobbyNumber("lobbyVentureAmount",CFG.ventureAmount,0,1000000),
+      ventureMinReturn:lobbyNumber("lobbyVentureMin",CFG.ventureMinReturn,0,20),
+      ventureMaxReturn:lobbyNumber("lobbyVentureMax",CFG.ventureMaxReturn,0,20)
+    });
+    state.stockfishEnabled=document.getElementById("lobbyStockfish")?.checked!==false;
+    state.specialEnabled=document.getElementById("lobbySpecialPieces")?.checked!==false;
+    CFG.orbitalStrike.enabled=document.getElementById("lobbyOrbitalEnabled")?.checked!==false;
+    CFG.orbitalStrike.price=lobbyNumber("lobbyOrbitalPrice",24000,0,10000000);
+    CFG.orbitalStrike.apCost=CFG.maxAP;
+    state.orbitalSettings={...CFG.orbitalStrike};
+    for(const color of ["w","b"]){
+      state.players[color].money=CFG.startMoney;
+      state.players[color].salary=CFG.startSalary;
+      state.players[color].salaryLevel=0;
+      state.players[color].ap=CFG.maxAP;
+    }
+    state.clock={w:seconds,b:seconds};
+    state.turnTimeLeft=seconds;
+    document.querySelector(".shop-panel")?.classList.toggle("special-disabled",!state.specialEnabled);
+  };
+  const begin=()=>{
+    const role=multiplayerRole();
+    if(mode==="multi"&&!role)return;
+    if((mode!=="multi"&&!role)||(mode==="multi"&&!["guest","spectator"].includes(role)))apply();
+    state.started=true;
+    lobby.classList.add("hidden");
+    render();
+    startTurnTimer();
+    if(role==="host")window.multiplayer.sendState(serializeGameState());
+  };
+  single.onclick=()=>{mode="single";renderInternet("offline");update();};
+  multi.onclick=()=>{mode="multi";renderInternet(window.multiplayer?.status||"offline");update();};
+  start.onclick=begin;
   document.getElementById("lobbyCreateRoomBtn")?.addEventListener("click",()=>window.multiplayer?.createRoom().catch(error=>{if(connection)connection.textContent=error.message;}));
   document.getElementById("lobbyJoinRoomBtn")?.addEventListener("click",()=>window.multiplayer?.joinRoom(document.getElementById("lobbyRoomCodeInput")?.value).catch(error=>{if(connection)connection.textContent=error.message;}));
   document.getElementById("lobbyWatchRoomBtn")?.addEventListener("click",()=>window.multiplayer?.watchRoom(document.getElementById("lobbyRoomCodeInput")?.value).catch(error=>{if(connection)connection.textContent=error.message;}));
-  const renderInternet=(status)=>{if(!internet)return;internet.textContent=mode!=="multi"?"인터넷: 로컬 모드":({offline:"인터넷: 오프라인",booting:"인터넷: 서버 부팅 중…",connecting:"인터넷: 서버에 연결 중…",reconnecting:"인터넷: 재연결 중…",connected:"인터넷: 연결됨",room:"인터넷: 연결됨",waiting:"인터넷: 연결됨",error:"인터넷: 연결 오류"}[status]||`인터넷: ${status||"확인 중"}`);};
-  if(window.multiplayer)window.multiplayer.onStatus=({status,detail})=>{renderInternet(status);if(connection&&mode==="multi")connection.textContent=detail||window.multiplayer.status;if(roomStatus&&mode==="multi"&&!detail)roomStatus.textContent=window.multiplayer.status;update();};
+  const renderInternet=status=>{
+    if(!internet)return;
+    const labels={offline:"\uc778\ud130\ub137: \uc624\ud504\ub77c\uc778",booting:"\uc778\ud130\ub137: \uc11c\ubc84 \ubd80\ud305 \uc911\u2026",connecting:"\uc778\ud130\ub137: \uc11c\ubc84\uc5d0 \uc5f0\uacb0 \uc911\u2026",reconnecting:"\uc778\ud130\ub137: \uc7ac\uc5f0\uacb0 \uc911\u2026",connected:"\uc778\ud130\ub137: \uc5f0\uacb0\ub428",room:"\uc778\ud130\ub137: \uc5f0\uacb0\ub428",waiting:"\uc778\ud130\ub137: \uc5f0\uacb0\ub428",error:"\uc778\ud130\ub137: \uc5f0\uacb0 \uc624\ub958"};
+    internet.textContent=mode!=="multi"?"\uc778\ud130\ub137: \ub85c\uceec \ubaa8\ub4dc":(labels[status]||("\uc778\ud130\ub137: "+(status||"\ud655\uc778 \uc911")));
+  };
+  if(window.multiplayer)window.multiplayer.onStatus=({status,detail})=>{
+    renderInternet(status);
+    if(connection&&mode==="multi")connection.textContent=detail||window.multiplayer.status;
+    if(roomStatus&&mode==="multi"&&!detail)roomStatus.textContent=window.multiplayer.status;
+    update();
+  };
+  window.addEventListener("game-language-change",update);
   renderInternet(window.multiplayer?.status||"offline");
   update();
 }
 
 async function init() {
-  const specialData=await SpecialPieces.load();
+  const [specialData,newsData]=await Promise.all([SpecialPieces.load(),window.GameNews.load()]);
+  NEWS=newsData;
+  await window.GameLanguage.load();
   const status=document.getElementById("specialLoadStatus");
   if(!specialData){
     if(status)status.textContent="특수기물 데이터를 불러오지 못했습니다. 일반 게임은 계속할 수 있습니다.";
@@ -427,6 +539,14 @@ async function init() {
   initStockfish();
   render();
   setupLobby();
+  const languageSelect=document.getElementById("interfaceLanguage");
+  if(languageSelect){
+    languageSelect.value=window.GameLanguage.getLocale();
+    languageSelect.addEventListener("change",async()=>{
+      await window.GameLanguage.setLocale(languageSelect.value);
+      languageSelect.value=window.GameLanguage.getLocale();
+    });
+  }
   showHeadline(0, true);
   state.headlineTimer=setInterval(cycleHeadline, 3600);
 }
@@ -439,6 +559,25 @@ function specialPiece(id,color){
   return {type:"special",specialId:id,color,moved:false,purchaseLocked:true,active:false,activationTurn:state.turnNo+1,attackLockedTurns:3,abilityCharges,id:crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)};
 }
 function specialDef(id){ return SpecialPieces.get(id); }
+function specialChessType(def){
+  const valid=new Set(["p","n","b","r","q","k"]);
+  const configured=def?.stockfish?.equivalent;
+  if(valid.has(configured))return configured;
+  if(def?.abilities?.some(ability=>ability.id==="ranged_capture"))return "r";
+  const movement=def?.movement||{};
+  const types=movement.type==="compound"?(movement.modes||movement.parts||[]).map(mode=>typeof mode==="string"?mode:mode?.type):[movement.type];
+  const visualTypes={queen:"q",rook:"r",bishop:"b",knight:"n",king:"k",pawn:"p",stationary:"r",dynamic:"r",progressive:"p",random_on_purchase:"n",king_aura_teleport:"k"};
+  for(const type of ["queen","rook","bishop","knight","king","pawn"])if(types.includes(type))return visualTypes[type];
+  return visualTypes[types[0]]||"n";
+}
+function specialChessGlyph(def){return ({k:"\u2654",q:"\u2655",r:"\u2656",b:"\u2657",n:"\u2658",p:"\u2659"})[specialChessType(def)];}
+function specialChessVisual(def,color="w",label=""){
+  const type=specialChessType(def),mark=String(def?.name||def?.id||"?").trim().slice(0,1);
+  const title=label||def?.name||"Special piece";
+  return '<span class="special-piece-icon special-piece-chess owner-'+color+'" title="'+title+'">'+pieceImgTag(color+type,"piece special-chess-image",color+type)+'<em>'+mark+'</em></span>';
+}
+window.specialChessVisual=specialChessVisual;
+window.specialChessGlyph=specialChessGlyph;
 function specialIcon(def){return def?.icon||def?.emoji||"♟";}
 function specialScore(def){return Number(def?.score??def?.pieceScore??0);}
 function specialTax(def){return Number(def?.maintenanceTax??def?.tax??0);}
@@ -453,6 +592,7 @@ function specialDisabledAt(r,c,p,board=state.board){
   }
   return false;
 }
+function operationalSpecialAt(r,c,p,board=state.board){return Boolean(p?.specialId&&p.active&&!specialDisabledAt(r,c,p,board));}
 function isFakeKingDef(def){return Boolean(def?.fakeKing||specialAbility(def,"fake_king_identity"));}
 function isCountsAsKingDef(def){return Boolean(def?.countsAsKing||specialAbility(def,"royal_unit")?.params?.countsAsKing);}
 function fakeKingPenalty(def){const a=specialAbility(def,"fake_king_identity");return Number(def?.captureApPenalty??a?.params?.captureAPPenalty??a?.params?.captureApPenalty??0);}
@@ -463,23 +603,22 @@ function pieceName(p,viewerColor=state.turn){
 }
 function piecePrice(p){return Number(pieceDef(p)?.price||0);}
 function pieceCaptureReward(p){return Number(pieceDef(p)?.captureReward??pieceDef(p)?.price??0);}
-function pieceScore(p){return p.specialId?specialScore(pieceDef(p)):Number(pieceDef(p)?.score||0);}
+function pieceScore(p){return p.specialId?(p.specialId==="venture_knight"&&Number.isFinite(Number(p.ventureScore))?Number(p.ventureScore):specialScore(pieceDef(p))):Number(pieceDef(p)?.score||0);}
 function isKingLike(p){const def=p?.specialId?specialDef(p.specialId):null;return p?.type==="k"||Boolean(p?.specialId&&!isFakeKingDef(def)&&isCountsAsKingDef(def));}
-function legacyPieceVisual(p){
-  const def=pieceDef(p);
-  if(p.specialId&&!isFakeKingDef(def)&&!isCountsAsKingDef(def))return `<span class="special-piece-icon owner-${p.color}" title="${pieceName(p)} · ${p.color==="w"?"백":"흑"}">${specialIcon(def)}<em>${p.color==="w"?"W":"B"}</em></span>`;
-  const ownerView=p.specialId&&isFakeKingDef(def)&&p.color===state.turn;
-  return pieceImgTag(p.color+"k","piece",ownerView?"가짜 킹":`${p.color}k`);
-}
+function legacyPieceVisual(p){return pieceVisual(p);}
 function pieceVisual(p){
-  const def=pieceDef(p),owner=p.color==="w"?"백":"흑";
-  if(p.specialId&&!isFakeKingDef(def)&&!isCountsAsKingDef(def))return `<span class="special-piece-icon owner-${p.color}" title="${pieceName(p)} · ${owner}">${specialIcon(def)}<em>${p.color==="w"?"W":"B"}</em></span>`;
+  const def=pieceDef(p);
+  const owner=p.color==="w"?langText("color.white","\ubc31"):langText("color.black","\ud751");
+  if(p.specialId&&!isFakeKingDef(def)&&!isCountsAsKingDef(def))return specialChessVisual(def,p.color,pieceName(p)+" | "+owner);
   const ownerView=p.specialId&&isFakeKingDef(def)&&p.color===state.turn;
-  return `<span class="special-piece-icon owner-${p.color}" title="${pieceName(p)} · ${owner}">${pieceImgTag(p.color+"k","piece",ownerView?"가짜 킹":`${p.color}k`)}<em>${p.color==="w"?"W":"B"}</em></span>`;
+  const alt=ownerView?langText("piece.fakeKing","\uac00\uc9dc \ud0b9"):p.color+"k";
+  const image=pieceImgTag(p.color+"k","piece",alt);
+  return '<span class="special-piece-icon owner-'+p.color+'" title="'+pieceName(p)+' | '+owner+'">'+image+'<em>'+(p.color==="w"?"W":"B")+'</em></span>';
 }
 function current(){ return state.players[state.turn]; }
 function enemyColor(c=state.turn){ return c === "w" ? "b" : "w"; }
 function fmt(n){ return "$" + Math.round(n).toLocaleString("ko-KR"); }
+function langText(key,fallback,values={}){return window.GameLanguage?.text(key,fallback,values)??fallback;}
 function sqName(r,c){ return FILES[c] + (8-r); }
 function fromName(s){ return {r:8-Number(s[1]), c:FILES.indexOf(s[0])}; }
 function inBounds(r,c){ return r>=0 && r<8 && c>=0 && c<8; }
@@ -487,10 +626,10 @@ function cloneBoard(board=state.board){ return board.map(row=>row.map(p=>p?{...p
 function countTax(color){
   let n=0;
   for(const row of state.board) for(const p of row) if(p?.color===color) n+=p.specialId?specialTax(pieceDef(p)):Number(PIECES[p.type]?.tax||0);
-  for(const row of state.board) for(const p of row) if(p?.color===color&&p.specialId&&p.active){
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=state.board[r][c];if(p?.color===color&&p.specialId&&operationalSpecialAt(r,c,p)){
     const ability=specialAbility(specialDef(p.specialId),"piece_tax_discount");
     if(ability)n=Math.max(0,Math.round(n*(1-Number(ability.params?.fraction||0))));
-  }
+  }}
   return n;
 }
 function countPieceScore(color){
@@ -501,6 +640,16 @@ function countPieceScore(color){
 function spend(player, amount, reason="지출"){
   if(player.money < amount){ log(`${reason}: 돈 부족 (${fmt(amount)} 필요)`,"bad"); return false; }
   player.money -= amount; return true;
+}
+function creditTerms(color=state.turn){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const unit=state.board[r][c];if(unit?.color===color&&unit.specialId==="credit_card_knight"&&operationalSpecialAt(r,c,unit)){const ability=specialAbility(specialDef(unit.specialId),"allow_credit_purchases");return runAbility(ability.id,{state,piece:unit,owner:state.players[color],params:ability.params||{},event:"purchase"})||{};}}return {};}
+function hasCreditLine(color=state.turn){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const unit=state.board[r][c];if(unit?.color===color&&unit.specialId==="credit_card_knight"&&operationalSpecialAt(r,c,unit))return Number(creditTerms(color).creditLimit)>0;}return false;}
+function purchaseAndAP(amount,apCost,label){
+  const p=current(),limit=hasCreditLine()?Number(creditTerms().creditLimit)||0:0;
+  if(p.money+Math.max(0,limit-Number(p.creditDebt||0))<amount){log(`${label}: 구매 자금과 신용 한도 부족`,`bad`);return false;}
+  if(p.ap<apCost){log(`${label}: AP 부족 (${apCost} 필요)`,`bad`);return false;}
+  const shortage=Math.max(0,amount-p.money);p.money-=Math.min(amount,Math.max(0,p.money));p.creditDebt=Number(p.creditDebt||0)+shortage;p.ap-=apCost;
+  if(shortage)log(`${label}: 신용 구매 +${fmt(shortage)} 부채`,`gold`);
+  return true;
 }
 function useAP(cost, label){
   const p=current();
@@ -706,7 +855,7 @@ function buildSpecialShop(){
   el.innerHTML="";
   for(const def of SpecialPieces.list()){
     const btn=document.createElement("button");btn.className="shop-item special-shop-item";btn.dataset.specialId=def.id;
-    btn.innerHTML=`<span class="shop-piece special-shop-icon">${specialIcon(def)}</span><b>${def.name}</b><small>${fmt(def.price)} · ${def.buyAP} AP</small><em class="special-stock" id="special-stock-${def.id}">재고 0</em>`;
+    btn.innerHTML=`<span class="shop-piece special-shop-icon">${specialChessVisual(def,"w",def.name)}</span><b>${def.name}</b><small>${fmt(def.price)} · ${def.buyAP} AP</small><em class="special-stock" id="special-stock-${def.id}">재고 0</em>`;
     btn.addEventListener("click",()=>startSpecialPurchase(def.id));
     btn.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();showPieceInfo(def,state.specialStock[def.id]||0,true,def.id,def.id);}});
     btn.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
@@ -784,6 +933,17 @@ function clickSquare(r,c){
     if(multiplayerRole()==="guest"){window.multiplayer.sendAction({type:"teleport",selected:state.selected,r,c});return;}
     return finishTeleport(r,c);
   }
+  if(state.mode==="taxi-passenger"){
+    if(!p||p.color!==state.turn||p.type==="k"||isKingLike(p))return log("택시가 태울 아군 기물을 선택해.","bad");
+    state.abilityPassenger={r,c};state.mode="taxi-destination";log(`${pieceName(p)} 탑승 완료. 택시가 이동할 빈 칸을 선택해.`,"gold");render();return;
+  }
+  if(state.mode==="taxi-destination"||state.mode==="piece-ability-target"){
+    if(state.mode==="taxi-destination"&&p)return log("택시는 빈 칸으로 이동해야 해.","bad");
+    if(state.mode==="piece-ability-target"&&state.pendingAbilityId==="paid_same_color_warp"&&p)return log("워프 목적지는 빈 칸이어야 해.","bad");
+    const id=state.pendingAbilityId,source={...state.abilitySource},passenger=state.abilityPassenger?{...state.abilityPassenger}:null,target={r,c};
+    if(multiplayerRole()==="guest")return window.multiplayer.sendAction({type:"pieceAbility",id,source,target,passenger});
+    return executePieceAbility(id,source,target,passenger);
+  }
 
   const isLegal=state.legalTargets.some(x=>x.r===r&&x.c===c);
   if(state.selected && isLegal){
@@ -805,7 +965,7 @@ function clickSquare(r,c){
   renderTileInfo(key);
 }
 
-function clearMode(){ state.mode=null;state.pendingPiece=null;state.pendingSpecialId=null;state.legalTargets=[];state.selected=null;render(); }
+function clearMode(){ state.mode=null;state.pendingPiece=null;state.pendingSpecialId=null;state.pendingAbilityId=null;state.abilitySource=null;state.abilityPassenger=null;state.legalTargets=[];state.selected=null;render(); }
 
 function getOrbitalStrikeSquares(target,settings=CFG.orbitalStrike){
   const center=typeof target==="string"?fromName(target):target;if(!center)return [];
@@ -837,7 +997,7 @@ function executeOrbitalStrike(targetKey){
   const target=fromName(String(targetKey||""));if(!target)return log("궤도 빔 목표 좌표가 잘못됐어.","bad");
   const shooter=state.turn,affectedSquares=getOrbitalStrikeSquares(target),destroyedPieces=[];let friendlyDamage=0,enemyDamage=0,whiteKing=false,blackKing=false;
   current().money-=CFG.orbitalStrike.price;current().ap-=CFG.orbitalStrike.apCost;
-  for(const cell of affectedSquares){const p=state.board[cell.r][cell.c];if(!p)continue;const value=p.type==="k"?0:piecePrice(p);destroyedPieces.push({r:cell.r,c:cell.c,key:cell.key,color:p.color,type:p.type,specialId:p.specialId||null,value});if(p.color===shooter)friendlyDamage+=value;else enemyDamage+=value;if(p.color==="w"&&(p.type==="k"||isKingLike(p)))whiteKing=true;if(p.color==="b"&&(p.type==="k"||isKingLike(p)))blackKing=true;state.board[cell.r][cell.c]=null;}
+  for(const cell of affectedSquares){const p=state.board[cell.r][cell.c];if(!p)continue;const value=p.type==="k"?0:piecePrice(p);destroyedPieces.push({r:cell.r,c:cell.c,key:cell.key,color:p.color,type:p.type,specialId:p.specialId||null,value});if(p.color===shooter)friendlyDamage+=value;else enemyDamage+=value;if(p.color==="w"&&isKingLike(p))whiteKing=true;if(p.color==="b"&&isKingLike(p))blackKing=true;state.board[cell.r][cell.c]=null;}
   const result={target:targetKey,shooter,affectedSquares,destroyedPieces,friendlyDamage,enemyDamage,kingDestroyed:{w:whiteKing,b:blackKing}};
   log(`[T${state.turnNo}] ${shooter==="w"?"백":"흑"}이 ORBITAL NUCLEAR BEAM을 발사했습니다.` ,"bad");log(`[T${state.turnNo}] 아군 ${destroyedPieces.filter(p=>p.color===shooter).length}개 / 적군 ${destroyedPieces.filter(p=>p.color!==shooter).length}개 기물이 파괴되었습니다.`);log(`[T${state.turnNo}] 아군 피해액 ${fmt(friendlyDamage)} / 적군 피해액 ${fmt(enemyDamage)}`);
   if(whiteKing)log(`[T${state.turnNo}] 백 KING이 궤도 타격으로 파괴되었습니다.` ,"bad");if(blackKing)log(`[T${state.turnNo}] 흑 KING이 궤도 타격으로 파괴되었습니다.` ,"bad");
@@ -853,7 +1013,7 @@ function startPurchase(type){
   if(multiplayerRole()==="spectator")return log("관전자는 구매할 수 없어.","bad");
   if(!canEconomy()) return;
   if(current().ap<1) return log("기물 구매: AP 부족","bad");
-  if(current().money<PIECES[type].price) return log(`기물 구매: ${fmt(PIECES[type].price)} 필요`,`bad`);
+  if(current().money<PIECES[type].price&&!hasCreditLine()) return log(`기물 구매: ${fmt(PIECES[type].price)} 필요`,`bad`);
   state.mode="buy"; state.pendingPiece=type; state.selected=null; state.legalTargets=[];
   log(`${PIECES[type].name} 구매 위치를 선택해.`,"gold"); render();
 }
@@ -862,7 +1022,7 @@ function startSpecialPurchase(id){
   const def=specialDef(id),stock=state.specialStock[id]||0;
   if(!def)return log("특수기물 데이터를 찾을 수 없어.","bad");
   if(stock<=0)return log(`${def.name}: 품절`,"bad");
-  if(current().money<Number(def.price))return log(`${def.name}: 돈 부족 (${fmt(def.price)} 필요)`,"bad");
+  if(current().money<Number(def.price)&&!hasCreditLine())return log(`${def.name}: 돈 부족 (${fmt(def.price)} 필요)`,"bad");
   if(current().ap<Number(def.buyAP))return log(`${def.name}: AP 부족 (${def.buyAP} 필요)`,"bad");
   state.mode="special-buy";state.pendingSpecialId=id;state.pendingPiece=null;state.selected=null;state.legalTargets=[];
   log(`${def.name} 구매 위치를 선택해.`,"gold");render();
@@ -873,7 +1033,7 @@ function finishPurchase(r,c){
   const type=state.pendingPiece;
   if(!homeZone(state.turn,r) || state.board[r][c]) return log("자기 진영의 빈 칸에만 배치 가능해.","bad");
   const price=PIECES[type].price;
-  if(!payAndAP(price,1,"기물 구매")) return;
+  if(!purchaseAndAP(price,1,"기물 구매")) return;
   state.board[r][c]=purchasedPiece(type,state.turn);
   playSound("buy");
   log(`${sqName(r,c)}에 ${PIECES[type].name} 채용 -${fmt(price)}`);
@@ -883,9 +1043,10 @@ function finishSpecialPurchase(r,c){
   const id=state.pendingSpecialId,def=specialDef(id);
   if(!def||!homeZone(state.turn,r)||state.board[r][c])return log("자기 진영의 빈 칸에만 배치 가능해.","bad");
   if((state.specialStock[id]||0)<=0)return log(`${def.name}: 품절`,"bad");
-  if(current().money<Number(def.price))return log(`${def.name}: 돈 부족`,"bad");
+  if(current().money<Number(def.price)&&!hasCreditLine())return log(`${def.name}: 돈 부족`,"bad");
   if(current().ap<Number(def.buyAP))return log(`${def.name}: AP 부족`,"bad");
-  current().money-=Number(def.price);current().ap-=Number(def.buyAP);state.specialStock[id]--;
+  if(!purchaseAndAP(Number(def.price),Number(def.buyAP),`${def.name} 구매`))return;
+  state.specialStock[id]--;
   if(isCountsAsKingDef(def)&&!isFakeKingDef(def)){
     for(let rr=0;rr<8;rr++)for(let cc=0;cc<8;cc++){
       const existing=state.board[rr][cc];
@@ -915,7 +1076,13 @@ function pseudoMoves(r,c,board=state.board, attackOnly=false){
   if(p.attackLockedTurns>0&&attackOnly)return [];
   if(specialDisabledAt(r,c,p,board))return [];
   if(p.specialId){
-    const def=specialDef(p.specialId),ranged=specialAbility(def,"ranged_capture"),movement=p.growMovement||p.ventureMovement||(ranged?{type:"ranged_capture",...ranged.params}:def?.movement),handler=window.movementHandlers?.[movement?.type];
+    const def=specialDef(p.specialId),ranged=specialAbility(def,"ranged_capture");let movement=p.growMovement||p.ventureMovement||(ranged?{type:"ranged_capture",...ranged.params}:def?.movement);
+    if(p.specialId==="short_seller"){
+      const opponent=state.players[enemyColor(p.color)],basis=Object.values(opponent.stockBasis||{}).reduce((sum,value)=>sum+Number(value||0),0),held=Object.entries(opponent.holdings||{}).reduce((sum,[key,qty])=>sum+Math.max(0,Number(opponent.stockBasis?.[key]||0)-STOCKS[key].price*qty),0),loss=basis?held/basis:0;
+      const power=runAbility("power_from_enemy_stock_losses",{state,piece:p,owner:state.players[p.color],params:specialAbility(def,"power_from_enemy_stock_losses")?.params||{},event:"evaluate",lossPct:loss*100})||{rangeBonus:0,captureBonus:0};
+      const range=1+Number(power.rangeBonus||0);movement=range>1?{type:"queen",maxDistance:range}:{type:"king",maxDistance:1};p.shortSellerCaptureBonus=Number(power.captureBonus||0);
+    }
+    const handler=window.movementHandlers?.[movement?.type];
     return handler?handler({r,c,board,p,attackOnly,movement}):[];
   }
   const out=[]; const add=(rr,cc)=>{ if(inBounds(rr,cc)) out.push({r:rr,c:cc}); };
@@ -968,11 +1135,14 @@ function legalMovesFor(r,c){
   const p=state.board[r][c]; if(!p) return [];
   return pseudoMoves(r,c,state.board,false).filter(target=>!(p.attackLockedTurns>0&&state.board[target.r][target.c]));
 }
-function tryCaptureDefense(captured,captureSquare,beforeBoard){
+function tryCaptureDefense(captured,captureSquare,beforeBoard,attacker,fromSquare){
   if(!captured?.specialId)return false;
+  const oldPosition=beforeBoard.flatMap((row,r)=>row.map((unit,c)=>unit?.id===captured.id?{r,c}:null)).flat().find(Boolean);if(oldPosition&&specialDisabledAt(oldPosition.r,oldPosition.c,captured,beforeBoard))return false;
   const def=specialDef(captured.specialId);
   for(const ability of specialAbilities(def)){
-    const result=runAbility(ability.id,{state,piece:captured,owner:state.players[captured.color],captured,params:ability.params||{},event:"capture",captureSquare,beforeBoard});
+    const result=runAbility(ability.id,{state,piece:captured,owner:state.players[captured.color],captured,params:ability.params||{},event:ability.id==="mirror_first_attack"?"beingCaptured":"capture",captureSquare,beforeBoard});
+    if(result?.mirror){state.board=beforeBoard;state.board[captureSquare.r][captureSquare.c]={...state.board[captureSquare.r][captureSquare.c],mirrorUsed:true};log(`${def.name}이(가) 첫 공격을 반사했어.`,`gold`);return true;}
+    if(result?.convert&&attacker&&fromSquare){state.board=beforeBoard;state.board[fromSquare.r][fromSquare.c]=null;state.board[captureSquare.r][captureSquare.c]={...attacker,color:captured.color,moved:true};log(`${def.name}이(가) 공격 기물을 자기 편으로 전환했어.`,`gold`);return true;}
     if(!result?.escapeSquare)continue;
     state.board=beforeBoard;
     state.board[captureSquare.r][captureSquare.c]=null;
@@ -984,11 +1154,13 @@ function tryCaptureDefense(captured,captureSquare,beforeBoard){
 }
 function tryNearbyCaptureDefense(captured,captureSquare,beforeBoard){
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    const defender=state.board[r][c];if(!defender||defender.color!==captured.color||!defender.specialId)continue;
+    const defender=state.board[r][c];if(!defender||defender.color!==captured.color||!defender.specialId||specialDisabledAt(r,c,defender))continue;
     for(const ability of specialAbilities(specialDef(defender.specialId))){
       const result=runAbility(ability.id,{state,piece:defender,captured,owner:state.players[defender.color],params:ability.params||{},event:"capture",captureSquare,beforeBoard});
       if(result?.defense){
+        const charges=defender.abilityCharges?{...defender.abilityCharges}:null;
         state.board=beforeBoard;
+        if(charges)for(const row of state.board)for(const unit of row)if(unit?.id===defender.id)unit.abilityCharges=charges;
         if(result.sacrifice){for(const row of state.board)for(const piece of row)if(piece?.id===defender.id){const rr=state.board.indexOf(row),cc=row.indexOf(piece);state.board[rr][cc]=null;}}
         return true;
       }
@@ -996,11 +1168,13 @@ function tryNearbyCaptureDefense(captured,captureSquare,beforeBoard){
   }
   return false;
 }
-function runCapturedAbilityEffects(captured,captureSquare){
+function runCapturedAbilityEffects(captured,captureSquare,attacker,beforeBoard){
   const effects=[];
   if(!captured?.specialId)return effects;
+  const oldPosition=beforeBoard?.flatMap((row,r)=>row.map((unit,c)=>unit?.id===captured.id?{r,c}:null)).flat().find(Boolean);if(oldPosition&&specialDisabledAt(oldPosition.r,oldPosition.c,captured,beforeBoard))return effects;
   for(const ability of specialAbilities(specialDef(captured.specialId))){
-    const result=runAbility(ability.id,{state,piece:captured,owner:state.players[captured.color],captured,params:ability.params||{},event:"capture",captureSquare,beforeBoard:null});
+    const event=ability.id==="explode_on_capture"?"beingCaptured":"capture";
+    const result=runAbility(ability.id,{state,piece:captured,owner:state.players[captured.color],captured:attacker||captured,params:ability.params||{},event,captureSquare,beforeBoard:null});
     if(result)effects.push(result);
   }
   return effects;
@@ -1011,6 +1185,8 @@ function runCaptureAbilityEffects(moving,captured,captureSquare){
     const result=runAbility(ability.id,{state,piece:moving,captured,owner:state.players[moving.color],params:ability.params||{},event:"capture",captureSquare});
     if(result)effects.push(result);
   }
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){const broker=state.board[r][c];if(!broker||broker.id===moving?.id||broker.color!==moving?.color||!broker.specialId||!operationalSpecialAt(r,c,broker))continue;for(const ability of specialAbilities(specialDef(broker.specialId))){if(ability.id!=="nearby_capture_bonus")continue;const result=runAbility(ability.id,{state,piece:broker,captured,owner:state.players[broker.color],params:ability.params||{},event:"capture",captureSquare});if(result)effects.push(result);}}
+  if(moving?.specialId==="short_seller"&&moving.shortSellerCaptureBonus)effects.push({captureBonusFraction:moving.shortSellerCaptureBonus});
   return effects;
 }
 function runMoveAbilityEffects(moving,from,to){
@@ -1033,11 +1209,14 @@ function applyMoveAbilityEffects(effects,to,moving){
     }
   }
 }
+function payMoveIncome(effects,moving){for(const effect of effects)if(effect.moveIncome){current().money+=effect.moveIncome;log(`${pieceName(moving)} 이동 수익 +${fmt(effect.moveIncome)}`,"good");}}
 function makeMove(fr,fc,tr,tc){
   const pl=current(); if(pl.moveUsed) return log("일반 체스 이동은 턴당 1번이야.","bad");
   if(pl.ap<1) return log("이동할 AP가 없어.","bad");
   const moving=state.board[fr][fc]; const captured=state.board[tr][tc];
   if(!moving || moving.color!==state.turn) return;
+  const rangedCapture=Boolean(moving.specialId&&specialAbility(specialDef(moving.specialId),"ranged_capture"));
+  if(rangedCapture&&(!captured||captured.color===moving.color))return log("저격은 사거리 안의 적 기물만 노릴 수 있어.","bad");
   if(moving.purchaseLocked&&!moving.active)return log("구매한 기물은 다음 자기 턴부터 활성화돼.","bad");
   if(captured&&moving.attackLockedTurns>0)return log("구매한 기물은 2턴 동안 공격할 수 없어.","bad");
   if(moving.specialId&&!moving.active)return log(`${pieceName(moving)}은 다음 자기 턴부터 활성화돼.`,"bad");
@@ -1046,7 +1225,7 @@ function makeMove(fr,fc,tr,tc){
   playSound(captured?"capture":"move");
   const beforeBoard=cloneBoard();
   const uci=sqName(fr,fc)+sqName(tr,tc)+(moving.type==="p" && (tr===0||tr===7)?"q":"");
-  state.board[tr][tc]={...moving,moved:true}; state.board[fr][fc]=null;
+  if(rangedCapture)state.board[tr][tc]=null;else{state.board[tr][tc]={...moving,moved:true};state.board[fr][fc]=null;}
   const moveEffects=runMoveAbilityEffects(moving,{r:fr,c:fc},{r:tr,c:tc});
   applyMoveAbilityEffects(moveEffects,{r:tr,c:tc},moving);
   pl.ap--; pl.moveUsed=true;
@@ -1054,10 +1233,22 @@ function makeMove(fr,fc,tr,tc){
   const revision=++state.engineRevision,moveId=++state.engineMoveSerial;
   if(captured){
     const captureEffects=runCaptureAbilityEffects(moving,captured,{r:tr,c:tc});
-    if(tryNearbyCaptureDefense(captured,{r:tr,c:tc},beforeBoard)||tryCaptureDefense(captured,{r:tr,c:tc},beforeBoard)){
-      state.selected={r:fr,c:fc};state.legalTargets=[];render();return;
+    if(captureEffects.some(effect=>effect.defense)){
+      state.board=beforeBoard;log(`${pieceName(moving)}의 포획이 특수능력에 막혔어.` ,"gold");state.selected={r:fr,c:fc};state.legalTargets=[];render();return;
     }
-    const capturedEffects=runCapturedAbilityEffects(captured,{r:tr,c:tc});
+    if(tryNearbyCaptureDefense(captured,{r:tr,c:tc},beforeBoard)||tryCaptureDefense(captured,{r:tr,c:tc},beforeBoard,moving,{r:fr,c:fc})){
+      state.selected=state.board[tr][tc]?.color===state.turn?{r:fr,c:fc}:{r:tr,c:tc};state.legalTargets=[];render();return;
+    }
+    payMoveIncome(moveEffects,moving);
+    const capturedEffects=runCapturedAbilityEffects(captured,{r:tr,c:tc},moving,beforeBoard);
+    if(capturedEffects.some(effect=>effect.explode)){
+      const radius=Number(specialAbility(specialDef(captured.specialId),"explode_on_capture")?.params?.radius)||1,kingBefore={w:Boolean(findKing("w")),b:Boolean(findKing("b"))};
+      for(let rr=tr-radius;rr<=tr+radius;rr++)for(let cc=tc-radius;cc<=tc+radius;cc++)if(inBounds(rr,cc)&&Math.max(Math.abs(rr-tr),Math.abs(cc-tc))<=radius)state.board[rr][cc]=null;
+      log(`${pieceName(captured)} 자폭! 주변 ${radius}칸 기물을 날려버렸어.`,`bad`);
+      const whiteLost=kingBefore.w&&!findKing("w"),blackLost=kingBefore.b&&!findKing("b");
+      if(whiteLost&&blackLost)return finishGame(null,"자폭으로 양쪽 킹이 함께 파괴되어 무승부");
+      if(whiteLost||blackLost)return finishGame(whiteLost?"b":"w","자폭으로 킹이 파괴됐어");
+    }
     const depositLoss=capturedEffects.find(effect=>effect.depositLossFraction);
     if(depositLoss){const owner=state.players[captured.color];owner.deposits=owner.deposits.map(d=>({...d,principal:Math.max(0,Math.round(d.principal*(1-depositLoss.depositLossFraction)))}));}
     const stolen=captureEffects.find(effect=>effect.stealFraction);
@@ -1078,7 +1269,7 @@ function makeMove(fr,fc,tr,tc){
     let reward=pieceCaptureReward(captured);
     const captureBonus=captureEffects.find(effect=>effect.captureBonusFraction);
     if(captureBonus)reward+=Math.round(reward*captureBonus.captureBonusFraction);
-    if(captured.type==="k"&&state.players[captured.color].insurance){
+    if(isKingLike(captured)&&state.players[captured.color].insurance){
       state.players[captured.color].insurance=false;
       state.board[fr][fc]=moving;state.board[tr][tc]=captured;pl.money-=reward;
       log(`${captured.color==="w"?"백":"흑"} 킹 포획을 부활 보험이 막았다.`,"gold");
@@ -1093,13 +1284,14 @@ function makeMove(fr,fc,tr,tc){
       log(`포획한 기물은 가짜 킹이었다. 포획자 AP -${penalty}.`,"gold");
     }
     state.lastMove={fr,fc,tr,tc,color:state.turn};
-    state.selected={r:tr,c:tc}; state.legalTargets=[];
+    state.selected=rangedCapture?{r:fr,c:fc}:{r:tr,c:tc}; state.legalTargets=[];
     if(captured.type==="k"||(captured.specialId&&isCountsAsKingDef(specialDef(captured.specialId))))finishGame(state.turn,`${captured.color==="w"?"백":"흑"} 킹 포획`);
     evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),uci,mover:state.turn,revision,moveId,moveLogEl,square:{r:tr,c:tc},info:{capture:true,check:isKingInCheck(enemyColor(),state.board),capturedValue:piecePrice(captured),movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
     render();
     if(state.gameOver)return;
     return;
   }
+  payMoveIncome(moveEffects,moving);
   if(moving.type==="p" && (tr===0||tr===7)){ state.board[tr][tc]={...state.board[tr][tc],type:"q"}; log("폰 승급 → 퀸!","gold"); }
   visitSquare(tr,tc,state.turn);
   state.lastMove={fr,fc,tr,tc,color:state.turn};
@@ -1115,7 +1307,7 @@ function visitSquare(r,c,color){
     let toll=propertyToll(key),multiplier=1;
     const square={r,c};
     for(let rr=0;rr<8;rr++)for(let cc=0;cc<8;cc++){
-      const p=state.board[rr][cc];if(!p?.specialId||p.color!==owner||!p.active)continue;
+      const p=state.board[rr][cc];if(!p?.specialId||p.color!==owner||!operationalSpecialAt(rr,cc,p))continue;
       for(const ability of specialAbilities(specialDef(p.specialId))){
         const effect=runAbility(ability.id,{state,piece:p,owner:state.players[owner],params:ability.params||{},event:"toll",captureSquare:square});
         if(effect?.tollMultiplier)multiplier=Math.max(multiplier,effect.tollMultiplier);
@@ -1138,9 +1330,55 @@ function buyProperty(){
   if(!payAndAP(price,1,"부동산 매입")) return;
   state.properties[key]=state.turn; log(`${key} 매입 -${fmt(price)} (현재 통행료 ${fmt(propertyToll(key))})`,`gold`);playSound("buy");render();renderTileInfo(key);
 }
+function beginPieceAbility(id){
+  if(!state.selected||!canEconomy())return;
+  const p=state.board[state.selected.r][state.selected.c],def=p?.specialId?specialDef(p.specialId):null;
+  if(!p||p.color!==state.turn||!p.active||!specialAbility(def,id))return log("능력을 사용할 특수기물을 선택해.","bad");
+  if(id==="paid_friendly_swap"||id==="paid_same_color_warp"||id==="hostile_takeover"){
+    state.mode="piece-ability-target";state.pendingAbilityId=id;state.abilitySource={...state.selected};state.abilityPassenger=null;
+    log(id==="paid_friendly_swap"?"위치를 바꿀 아군 기물을 선택해.":id==="paid_same_color_warp"?"같은 색의 빈 칸을 선택해.":"인수할 인접한 적 기물을 선택해.","gold");render();return;
+  }
+  if(id==="carry_friendly_piece"){
+    state.mode="taxi-passenger";state.pendingAbilityId=id;state.abilitySource={...state.selected};state.abilityPassenger=null;
+    log("택시에 태울 아군 기물을 선택해.","gold");render();
+  }
+}
+function executePieceAbility(id,source,target,passenger){
+  if(!source||!target||!inBounds(source.r,source.c)||!inBounds(target.r,target.c))return;
+  const unit=state.board[source.r][source.c],def=unit?.specialId?specialDef(unit.specialId):null,ability=specialAbility(def,id),p=current();
+  if(!unit||unit.color!==state.turn||!unit.active||!ability||state.gameOver)return log("능력 사용 조건이 맞지 않아.","bad");
+  const from=sqName(source.r,source.c),to=sqName(target.r,target.c),params=ability.params||{},action=runAbility(id,{state,piece:unit,owner:p,params,event:"action"})||{};
+  if(id==="paid_same_color_warp"){
+    const cost=Number(action.moneyCost??params.moneyCost)||500,ap=Number(action.apCost??params.apCost)||1;
+    if(state.board[target.r][target.c]||((source.r+source.c)%2)!==((target.r+target.c)%2))return log("같은 색의 빈 칸만 워프할 수 있어.","bad");
+    if(!payAndAP(cost,ap,"워프"))return;
+    state.board[target.r][target.c]={...unit,moved:true};state.board[source.r][source.c]=null;visitSquare(target.r,target.c,state.turn);log(`${def.name}: ${from} → ${to} · 워프 -${fmt(cost)} / ${ap} AP`,"gold");
+  }else if(id==="paid_friendly_swap"){
+    const other=state.board[target.r][target.c],cost=Number(action.moneyCost??params.moneyCost)||350,ap=Number(action.apCost??params.apCost)||1;
+    if(!other||other.color!==unit.color||other===unit||isKingLike(other))return log("킹이 아닌 아군 기물과만 교환할 수 있어.","bad");
+    if(!payAndAP(cost,ap,"기물 교환"))return;
+    state.board[source.r][source.c]={...other,moved:true};state.board[target.r][target.c]={...unit,moved:true};log(`${def.name}: ${from} ↔ ${to} 교환 -${fmt(cost)} / ${ap} AP`,"gold");
+  }else if(id==="hostile_takeover"){
+    const other=state.board[target.r][target.c],radius=Number(params.radius)||1,cost=other?Math.ceil(piecePrice(other)*(1+(Number(action.premiumFraction??params.premiumFraction)||0))):0;
+    if(!other||other.color===unit.color||isKingLike(other)||Math.max(Math.abs(source.r-target.r),Math.abs(source.c-target.c))>radius)return log("인접한 킹 이외의 적 기물만 인수할 수 있어.","bad");
+    if(!payAndAP(cost,2,"적대적 인수"))return;
+    state.board[target.r][target.c]={...other,color:unit.color,active:true,purchaseLocked:false,attackLockedTurns:0};log(`${pieceName(other)} 인수 완료 -${fmt(cost)} / 2 AP`,"gold");
+  }else if(id==="carry_friendly_piece"){
+    const rider=passenger&&state.board[passenger.r]?.[passenger.c];
+    if(!rider||rider===unit||(passenger.r===source.r&&passenger.c===source.c)||rider.color!==unit.color||rider.type==="k"||isKingLike(rider)||state.board[target.r][target.c]||Math.max(Math.abs(source.r-target.r),Math.abs(source.c-target.c))>(Number(def.movement.maxDistance)||3))return log("택시 목적지 또는 승객이 올바르지 않아.","bad");
+    let drop=null;for(let radius=1;radius<=2&&!drop;radius++)for(let dr=-radius;dr<=radius&&!drop;dr++)for(let dc=-radius;dc<=radius;dc++){const rr=target.r+dr,cc=target.c+dc,willVacate=(rr===source.r&&cc===source.c)||(rr===passenger.r&&cc===passenger.c);if(inBounds(rr,cc)&&(willVacate||!state.board[rr][cc])&&(rr!==target.r||cc!==target.c)&&Math.max(Math.abs(rr-target.r),Math.abs(cc-target.c))===radius){drop={r:rr,c:cc};break;}}
+    if(!drop)return log("승객이 내릴 칸이 없어.","bad");
+    if(!payAndAP(Number(params.moneyCost)||250,Number(params.apCost)||1,"택시 운송"))return;
+    state.board[source.r][source.c]=null;state.board[passenger.r][passenger.c]=null;state.board[target.r][target.c]={...unit,moved:true};
+    state.board[drop.r][drop.c]={...rider,moved:true};visitSquare(target.r,target.c,state.turn);visitSquare(drop.r,drop.c,state.turn);log(`${pieceName(rider)} 택시 탑승 운송 ${sqName(drop.r,drop.c)} · -${fmt(Number(params.moneyCost)||250)}`,"gold");
+  }else return log("아직 연결되지 않은 능력이야.","bad");
+  state.mode=null;state.pendingAbilityId=null;state.abilitySource=null;state.abilityPassenger=null;state.selected={r:target.r,c:target.c};checkBankruptcy();render();
+}
 function renderTileInfo(key){
   const owner=state.properties[key]; const visits=state.visits[key]||0;
-  document.getElementById("tileInfo").innerHTML=`<b>${key}</b> · 방문 ${visits}회 · 가치 ${fmt(propertyPrice(key))} · 통행료 ${fmt(propertyToll(key))}<br>소유자: ${owner?(owner==="w"?"백":"흑"):"없음"}`;
+  const tile=state.board[8-Number(key[1])][FILES.indexOf(key[0])],actions={paid_same_color_warp:"같은 색 칸으로 워프",paid_friendly_swap:"아군과 위치 교환",carry_friendly_piece:"아군 기물 운송",hostile_takeover:"인접 기물 인수"},ability=tile?.specialId?specialAbilities(specialDef(tile.specialId)).find(a=>actions[a.id]):null;
+  document.getElementById("tileInfo").innerHTML=`<b>${key}</b> · 방문 ${visits}회 · 가치 ${fmt(propertyPrice(key))} · 통행료 ${fmt(propertyToll(key))}<br>소유자: ${owner?(owner==="w"?"백":"흑"):"없음"}${ability&&tile.color===state.turn?`<br><button type="button" id="pieceAbilityBtn">${actions[ability.id]}</button>`:""}`;
+  document.getElementById("pieceAbilityBtn")?.addEventListener("click",()=>beginPieceAbility(ability.id));
 }
 
 function doJob(){ if(!canEconomy()||!useAP(1,"알바"))return;current().money+=CFG.jobPay;playSound("click");log(`알바 완료 +${fmt(CFG.jobPay)} (킹이 알바 뛰는 세계관)`,`good`);render(); }
@@ -1152,19 +1390,19 @@ function raiseSalary(){
 }
 function makeDeposit(){
   if(!canEconomy())return;const p=current();
-  if(!payAndAP(500,1,"적금"))return;
-  p.deposits.push({principal:500,due:p.ownTurns+4});log(`적금 가입 -$500 · ${4}회 내 턴 뒤 만기`,`gold`);render();
+  if(!payAndAP(CFG.depositAmount,1,"적금"))return;
+  p.deposits.push({principal:CFG.depositAmount,due:p.ownTurns+4});log(`적금 가입 -${fmt(CFG.depositAmount)} · 4회 내 턴 뒤 만기`,`gold`);render();
 }
 function makeVenture(){
   if(!canEconomy())return;const p=current();
-  if(!payAndAP(300,1,"벤처 투자"))return;
-  const mult=+(0.35+Math.random()*1.85).toFixed(2);
-  p.ventures.push({principal:300,due:p.ownTurns+3,mult});log(`벤처 투자 -$300 · 결과는 3회 내 턴 뒤 공개`,`gold`);render();
+  if(!payAndAP(CFG.ventureAmount,1,"벤처 투자"))return;
+  const mult=+(CFG.ventureMinReturn+Math.random()*(CFG.ventureMaxReturn-CFG.ventureMinReturn)).toFixed(2);
+  p.ventures.push({principal:CFG.ventureAmount,due:p.ownTurns+3,mult});log(`벤처 투자 -${fmt(CFG.ventureAmount)} · 결과는 3회 내 턴 뒤 공개`,`gold`);render();
 }
 function processMaturities(color){
   const p=state.players[color];
-  const interestMultiplier=Number(p.interestMultiplier||1);
-  p.deposits=p.deposits.filter(d=>{if(d.due<=p.ownTurns){const ret=Math.round(d.principal*(1.12*interestMultiplier));p.money+=ret;log(`${color==="w"?"백":"흑"} 적금 만기 +${fmt(ret)}`,"good");return false;}return true;});
+  let banker=null;for(let r=0;r<8;r++)for(let c=0;c<8;c++){const unit=state.board[r][c];if(unit?.color===color&&unit.specialId==="banker"&&operationalSpecialAt(r,c,unit))banker=unit;}const bonus=banker?Number(specialAbility(specialDef("banker"),"deposit_interest_bonus")?.params?.multiplier)||1.2:1;
+  p.deposits=p.deposits.filter(d=>{if(d.due<=p.ownTurns){const ret=Math.round(d.principal*(CFG.depositReturn*bonus));p.money+=ret;log(`${color==="w"?"백":"흑"} 적금 만기 +${fmt(ret)}`,"good");return false;}return true;});
   p.ventures=p.ventures.filter(v=>{if(v.due<=p.ownTurns){const ret=Math.round(v.principal*v.mult);p.money+=ret;log(`${color==="w"?"백":"흑"} 벤처 회수 ${fmt(ret)} (${v.mult}×)`,ret>=v.principal?"good":"bad");return false;}return true;});
 }
 function escortKingAuraPieces(color){
@@ -1191,10 +1429,10 @@ function runTurnAbilities(color){
   for(const row of state.board)for(const p of row)if(p?.color===color&&p.purchaseLocked&&p.active&&p.activationTurn<state.turnNo&&p.attackLockedTurns>0){
     p.attackLockedTurns--;
   }
-  for(const row of state.board)for(const p of row)if(p?.color===color&&p.specialId){
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=state.board[r][c];if(p?.color===color&&p.specialId){
     const def=specialDef(p.specialId);
     if(!p.active&&p.activationTurn<=state.turnNo){p.active=true;log(`${def?.name||"특수기물"} 활성화.`,`gold`);}
-    if(!p.active)continue;
+    if(!p.active||specialDisabledAt(r,c,p))continue;
     p.specialTurnCount=Number(p.specialTurnCount||0)+1;
     for(const ability of specialAbilities(def)){
       const result=runAbility(ability.id,{state,owner:state.players[color],piece:p,params:ability.params||{},event:"turn"});
@@ -1204,7 +1442,7 @@ function runTurnAbilities(color){
         else if(!findKing(enemyColor(color)))finishGame(color,"상대 킹이 블랙홀에 휩쓸렸어");
       }
     }
-  }
+  }}
   escortKingAuraPieces(color);
 }
 
@@ -1213,27 +1451,29 @@ function instantPromote(){
   const {r,c}=state.selected,p=state.board[r][c];
   if(!p||p.color!==state.turn||p.type!=="p")return log("선택한 게 네 폰이 아님.","bad");
   if(!payAndAP(CFG.promoteCost,1,"즉시 승급"))return;
-  const restrictions=p.purchaseLocked?{}:{purchaseLocked:true,active:false,activationTurn:state.turnNo+1,attackLockedTurns:3};
+  const restrictions=p.purchaseLocked?{}:{purchaseLocked:true,active:false,activationTurn:state.turnNo+1,attackLockedTurns:1};
   state.board[r][c]={...p,...restrictions,type:"q"};
-  log(`${sqName(r,c)} 폰 즉시승급 → 퀸 -${fmt(CFG.promoteCost)} · 다음 자기 턴 활성화, 공격 2턴 제한`,"gold");render();
+  log(`${sqName(r,c)} 폰 즉시승급 → 퀸 -${fmt(CFG.promoteCost)} · 다음 자기 턴부터 활동`,"gold");render();
 }
 function startTeleport(){
   if(!canEconomy()||!state.selected)return log("텔레포트할 자기 기물을 선택해.","bad");
   const p=state.board[state.selected.r][state.selected.c];
-  if(!p||p.color!==state.turn||p.type==="k")return log("자기 기물(킹 제외)을 선택해.","bad");
+  if(!p||p.color!==state.turn||isKingLike(p))return log("자기 기물(킹 제외)을 선택해.","bad");
   if(current().money<CFG.teleportCost||current().ap<2)return log(`즉시이동은 ${fmt(CFG.teleportCost)} + 2 AP 필요.`,"bad");
   state.mode="teleport";log("빈 칸을 클릭하면 즉시이동 발동.","gold");render();
 }
 function finishTeleport(r,c){
+  if(!canEconomy()||!inBounds(r,c))return clearMode();
   if(state.board[r][c])return log("빈 칸으로만 순간이동 가능.","bad");
   const from={...state.selected},p=state.board[from.r][from.c]; if(!p)return clearMode();
-  const before=cloneBoard(); state.board[r][c]={...p,moved:true};state.board[from.r][from.c]=null;
-  if(!spend(current(),CFG.teleportCost,"즉시이동")||!useAP(2,"즉시이동")){state.board=before;return;}
+  if(p.color!==state.turn||isKingLike(p))return clearMode();
+  if(!payAndAP(CFG.teleportCost,2,"즉시이동"))return clearMode();
+  state.board[r][c]={...p,moved:true};state.board[from.r][from.c]=null;
   visitSquare(r,c,state.turn);log(`${sqName(from.r,from.c)} → ${sqName(r,c)} 즉시이동 -${fmt(CFG.teleportCost)}`,"gold");clearMode();checkBankruptcy();
 }
 function buyInsurance(){
   if(!canEconomy())return;const p=current();if(p.insurance)return log("이미 킹 부활 보험 있어.","bad");
-  if(!payAndAP(CFG.insuranceCost,1,"부활 보험"))return;
+  if(!payAndAP(CFG.insuranceCost,2,"부활 보험"))return;
   p.insurance=true;log("킹 포획 방어 보험 가입 완료. 다음 킹 포획 1회 방어.","gold");render();
 }
 
@@ -1241,16 +1481,16 @@ function tradeStock(isBuy){
   if(!canEconomy())return; const key=document.getElementById("stockSelect").value; const qty=Math.max(1,Math.min(99,Number(document.getElementById("stockQty").value)||1));
   const p=current(), stock=STOCKS[key], total=Math.round(stock.price*qty);
   if(p.ap<1)return log("주식 거래: AP 부족","bad");
-  if(isBuy){if(p.money<total)return log("매수 자금 부족","bad");p.money-=total;p.holdings[key]+=qty;log(`${stock.name} ${qty}주 매수 -${fmt(total)}`);} else {if(p.holdings[key]<qty)return log("보유 주식 부족","bad");p.holdings[key]-=qty;p.money+=total;log(`${stock.name} ${qty}주 매도 +${fmt(total)}`,"good");}
-  p.ap--;render();
+  if(isBuy){if(p.money<total){if(!hasCreditLine())return log("매수 자금 부족","bad");if(!purchaseAndAP(total,1,"주식 매수"))return;}else{p.money-=total;p.ap--;}p.holdings[key]+=qty;p.stockBasis[key]=Number(p.stockBasis?.[key]||0)+total;log(`${stock.name} ${qty}주 매수 -${fmt(total)}`);} else {if(p.holdings[key]<qty)return log("보유 주식 부족","bad");const average=Number(p.stockBasis?.[key]||0)/p.holdings[key];p.holdings[key]-=qty;p.stockBasis[key]=Math.max(0,Number(p.stockBasis?.[key]||0)-average*qty);p.money+=total;p.ap--;log(`${stock.name} ${qty}주 매도 +${fmt(total)}`,"good");}
+  render();
 }
 function moveMarket(){
-  for(const s of Object.values(STOCKS)){s.last=s.price;const drift=(Math.random()-0.5)*0.07;s.price=Math.max(10,+((s.price*(1+drift)).toFixed(2)));}
+  for(const s of Object.values(STOCKS)){s.last=s.price;const drift=(Math.random()-0.5)*0.05;s.price=Math.max(10,+((s.price*(1+drift)).toFixed(2)));}
   if(Math.random()<0.72){
     const news=selectNews();
-    const s=STOCKS[news.companyId];
-    if(s){s.price=Math.max(10,+((s.price*(1+news.effect)).toFixed(2)));}
-    addNews({id:news.id,company:s?.name||news.companyId,companyId:news.companyId,text:news.text});
+    if(news.companyId==="market")for(const s of Object.values(STOCKS))s.price=Math.max(10,+((s.price*(1+news.effect)).toFixed(2)));
+    else {const s=STOCKS[news.companyId];if(s)s.price=Math.max(10,+((s.price*(1+news.effect)).toFixed(2)));}
+    addNews({id:news.id,company:news.company||STOCKS[news.companyId]?.name||news.companyId,companyId:news.companyId,text:news.text});
   }
 }
 function selectNews(){
@@ -1273,7 +1513,7 @@ function addNews(eventOrCompany,text){
   state.recentNewsIds.push(event.id);
   if(state.recentNewsIds.length>NEWS_HISTORY_LIMIT)state.recentNewsIds.shift();
   state.news.unshift(event);
-  state.news=state.news.slice(0,8);
+  state.news=state.news.slice(0,NEWS_HISTORY_LIMIT);
   state.headlineIndex=0;
   showHeadline(0, false);
   return event;
@@ -1300,14 +1540,16 @@ function endTurn(timedOut=false){
   state.turn=next;state.turnNo++;
   const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;playSound("select");
   p.money+=p.salary;const tax=countTax(state.turn);p.money-=tax;
+  if(Number(p.creditDebt||0)>0){const terms=creditTerms(state.turn),interest=Number(terms.interestPerTurn)||0.08,fee=Math.ceil(p.creditDebt*interest);p.creditDebt+=fee;const repayment=Math.min(p.creditDebt,Math.max(0,Math.floor(p.salary*0.2)),Math.max(0,p.money));p.creditDebt-=repayment;p.money-=repayment;log(`신용 잔액 이자 +${fmt(fee)} · 자동 상환 -${fmt(repayment)} · 부채 ${fmt(p.creditDebt)}`,fee?"bad":"");}
   if(p.money<0){
     for(const row of state.board)for(const unit of row)if(unit?.color===state.turn&&unit.specialId){
-      const ability=specialAbility(specialDef(unit.specialId),"defect_on_unpaid_tax");
-      if(ability&&ability.params?.toOpponent){unit.color=enemyColor(state.turn);log(`${specialDef(unit.specialId)?.name||"특수기물"}이 세금 미납으로 상대 진영에 넘어갔어.` ,"bad");}
+      const ability=specialAbility(specialDef(unit.specialId),"defect_on_unpaid_tax"),effect=ability&&runAbility(ability.id,{state,piece:unit,owner:p,params:ability.params||{},event:"tax"});
+      if(effect?.toOpponent){unit.color=enemyColor(state.turn);log(`${specialDef(unit.specialId)?.name||"특수기물"}이 세금 미납으로 상대 진영에 넘어갔어.` ,"bad");}
     }
   }
   log(`${state.turn==="w"?"백":"흑"} 턴 시작: 월급 +${fmt(p.salary)}, 세금 -${fmt(tax)}`,tax?"":"good");
   processMaturities(state.turn);runTurnAbilities(state.turn);if(state.gameOver){render();return;}moveMarket();
+  if(checkBankruptcy()){render();return;}
   if(SpecialPieces.data&&state.turnNo%Number(SpecialPieces.data.restockEveryTurns||3)===0)restockSpecialPieces();
   clearMode();startTurnTimer();render();
 }
@@ -1453,8 +1695,7 @@ function standardLegalMoveCount(board,color){
 }
 function isForcedMovePosition(board,color){return standardLegalMoveCount(board,color)===1;}
 function legacyClassifyMove(context,before,after){
-  const loss=Math.max(0,before-after),gain=after-before,best=after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
-  if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum)return {key:"low-confidence",bonus:0,label:"분석 신뢰도 낮음"};
+  const loss=Math.max(0,before-after),gain=after-before,best=context.standardLegal&&after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
   if(isBrilliantMove({context,before,after,loss,gain,best}))return {key:"brilliant",bonus:ENGINE_EVAL_CONFIG.brilliantBonus,label:"!! 탁월수"};
   if(best)return {key:"best",bonus:ENGINE_EVAL_CONFIG.bestBonus,label:"! 최선수"};
   if(loss<=ENGINE_EVAL_CONFIG.bestMaxLoss)return {key:"good",bonus:ENGINE_EVAL_CONFIG.goodBonus,label:"좋은 수"};
@@ -1476,8 +1717,7 @@ function legacyStockfishGrade(result,context,loss){
   return {label:"Blunder",annotation:"??"};
 }
 function classifyMove(context,before,after){
-  const loss=Math.max(0,before-after),gain=after-before,best=after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
-  if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum)return {key:"low-confidence",bonus:0,label:"분석 신뢰도 낮음"};
+  const loss=Math.max(0,before-after),gain=after-before,best=context.standardLegal&&after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
   if(isBrilliantMove({context,before,after,loss,gain,best}))return {key:"brilliant",bonus:ENGINE_EVAL_CONFIG.brilliantBonus,label:"!! 탁월수"};
   if(best)return {key:"great",bonus:ENGINE_EVAL_CONFIG.bestBonus,label:"! 훌륭한 수"};
   if(loss<=ENGINE_EVAL_CONFIG.interestingMaxLoss)return {key:"interesting",bonus:0,label:"!? 흥미로운 수"};
@@ -1498,11 +1738,11 @@ function annotateMoveLog(context,symbol){
   if(!context.moveLogEl.textContent.endsWith(` ${symbol}`))context.moveLogEl.textContent+=` ${symbol}`;
 }
 const MOVE_GRADE_VFX={
-  brilliant:{className:"brilliant",title:"BRILLIANT",symbol:"!!",duration:1800,particles:20,defaultBonus:350,variants:["sunburst","slash","crown","nova","orbit"]},
-  best:{className:"best",title:"BEST MOVE",symbol:"",duration:1400,particles:9,defaultBonus:160,variants:["ripple","sweep","orbit","pulse"]},
+  brilliant:{className:"brilliant",title:"BRILLIANT",symbol:"!!",duration:1800,particles:20,defaultBonus:180,variants:["sunburst","slash","crown","nova","orbit"]},
+  best:{className:"best",title:"BEST MOVE",symbol:"",duration:1400,particles:9,defaultBonus:80,variants:["ripple","sweep","orbit","pulse"]},
   interesting:{className:"interesting",title:"INTERESTING",symbol:"!?",duration:1000,particles:5,defaultBonus:0,variants:["sweep","fork","orbit"]},
   excellent:{className:"excellent",title:"EXCELLENT",symbol:"",duration:1100,particles:5,defaultBonus:0,variants:["sweep"]},
-  good:{className:"good",title:"GOOD",symbol:"",duration:900,particles:3,defaultBonus:60,variants:["pulse"]},
+  good:{className:"good",title:"GOOD",symbol:"",duration:900,particles:3,defaultBonus:30,variants:["pulse"]},
   inaccuracy:{className:"inaccuracy",title:"INACCURACY",symbol:"?!",duration:850,particles:2,defaultBonus:0,variants:["wobble","glitch","flash"]},
   mistake:{className:"mistake",title:"MISTAKE",symbol:"?",duration:1000,particles:1,defaultBonus:0,variants:["drop","tilt","crack"]},
   blunder:{className:"blunder",title:"BLUNDER",symbol:"??",duration:1200,particles:2,defaultBonus:0,variants:["impact","quake","vignette"]},
@@ -1549,7 +1789,7 @@ function showMoveGradeEffect({grade,bonus=0,square=null,moveId=null}={}){
 }
 function stockfishMaterial(board){
   const value={w:0,b:0};
-  for(const row of board)for(const p of row)if(p?.color)value[p.color]+=PIECE_SCORE[p.type]||0;
+  for(const row of board)for(const p of row)if(p?.color)value[p.color]+=p.specialId?pieceScore(p):PIECE_SCORE[p.type]||0;
   return value;
 }
 function stockfishPieceLabel(p){
@@ -1593,6 +1833,20 @@ function debugStockfishMoveEval(data){
     console.warn("[SF WARNING] 큰 기물 손실인데 BEST 경로로 판정됨",data);
   }
 }
+function fallbackStockfishGrade(context,reason,capturedPiece){
+  if(state.engineRevision!==context.revision||state.engineAwarded.has(context.moveId))return;
+  const board=context.afterBoard||[];
+  const ownKing=board.flat().some(piece=>piece&&piece.color===context.mover&&isKingLike(piece));
+  const enemyKing=board.flat().some(piece=>piece&&piece.color===enemyColor(context.mover)&&isKingLike(piece));
+  let grade="Interesting",annotation="!?",bonus=0;
+  if(!ownKing){grade="Blunder";annotation="??";}
+  else if(!enemyKing){grade="Brilliant";annotation="!!";bonus=ENGINE_EVAL_CONFIG.brilliantBonus;}
+  else if(context.info.check||capturedPiece){grade="Good";annotation="";bonus=context.info.capture?ENGINE_EVAL_CONFIG.goodBonus:0;}
+  showMoveGradeEffect({grade,bonus,square:context.square,moveId:context.moveId});
+  annotateMoveLog(context,`${grade}${annotation?` ${annotation}`:""}`);
+  log(`근사 판정: ${grade} · ${reason}`);
+  if(bonus){state.engineAwarded.add(context.moveId);state.players[context.mover].money+=bonus;log(`${grade} 보너스 +${fmt(bonus)}`,"gold");render();}
+}
 async function evaluateMoveWithStockfish(context){
   if(state.stockfishEnabled===false)return;
   const playerUci=String(context.uci||"").toLowerCase();
@@ -1602,34 +1856,30 @@ async function evaluateMoveWithStockfish(context){
   const materialBefore=context.beforeBoard?stockfishMaterial(context.beforeBoard):null;
   const materialAfter=context.afterBoard?stockfishMaterial(context.afterBoard):null;
   const standardLegal=standardLegalUci(context.beforeBoard,context.mover,playerUci);
-  const debugSkipped=(classification,extra={})=>debugStockfishMoveEval({beforeFen:"unavailable",playerUci,stockfishBestmove:null,bestmoveMatch:false,rawBestScore:null,rawPlayedScore:null,rootSideBefore:context.mover,rootSidePlayed:enemyColor(context.mover),normalizedBestScore:null,normalizedPlayedScore:null,moverColor:context.mover,bestScoreMoverPOV:null,playedScoreMoverPOV:null,centipawnLoss:null,movingPiece:stockfishPieceLabel(movingPiece),capturedPiece:stockfishPieceLabel(capturedPiece),materialBefore,materialAfter,confidence:context.confidence??null,analysisValid:false,invalidReason:classification,standardLegal:extra.standardLegal??standardLegal,bonusEligible:false,classification:"Unrated",bonus:0});
-  if(!context.info.movingIsStandard||!window.stockfishPositionAdapter){debugSkipped("skipped: non-standard or adapter unavailable");annotateMoveLog(context,"?");return;}
+  const debugSkipped=(classification,extra={})=>debugStockfishMoveEval({beforeFen:"unavailable",playerUci,stockfishBestmove:null,bestmoveMatch:false,rawBestScore:null,rawPlayedScore:null,rootSideBefore:context.mover,rootSidePlayed:enemyColor(context.mover),normalizedBestScore:null,normalizedPlayedScore:null,moverColor:context.mover,bestScoreMoverPOV:null,playedScoreMoverPOV:null,centipawnLoss:null,movingPiece:stockfishPieceLabel(movingPiece),capturedPiece:stockfishPieceLabel(capturedPiece),materialBefore,materialAfter,confidence:context.confidence??null,analysisValid:false,invalidReason:classification,standardLegal:extra.standardLegal??standardLegal,bonusEligible:false,classification:extra.grade||"Fallback",bonus:0});
+  if(!window.stockfishPositionAdapter){fallbackStockfishGrade(context,"adapter unavailable",capturedPiece);return;}
   const beforePosition=stockfishPositionAdapter.fromBoard(context.beforeBoard,context.mover);
   const afterPosition=stockfishPositionAdapter.fromBoard(context.afterBoard,enemyColor(context.mover));
   context.confidence=Math.min(beforePosition.confidence,afterPosition.confidence);
-  if(!standardLegal){debugSkipped("playerUci is not standard-legal",{standardLegal:false});annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외 · 표준 체스 불법 수","bad");return;}
-  if(context.confidence<ENGINE_EVAL_CONFIG.confidenceMinimum){debugSkipped("skipped: low confidence");log(`Stockfish 분석 신뢰도 낮음 (${stockfishPositionAdapter.confidenceLabel(context.confidence)}) · 보너스 없음`);return;}
-  if(isForcedMovePosition(context.beforeBoard,context.mover)){
-    annotateMoveLog(context,"→");
-    log("Stockfish 평가: → 강제수 (유일한 합법 수)","gold");
-    return;
-  }
+  const enemyKingPresent=context.afterBoard?.flat().some(piece=>piece&&piece.color===enemyColor(context.mover)&&isKingLike(piece));
+  if(!enemyKingPresent){fallbackStockfishGrade(context,"king captured",capturedPiece);return;}
   try{
-    const beforeResult=await stockfish.analyze(beforePosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: before analysis (${error?.message||"unknown"})`);annotateMoveLog(context,"?");log(`Stockfish 분석 실패: ${error?.message||"Worker 응답 없음"}`,"bad");return null;});
-    if(!beforeResult)return;
-    if(!beforeResult.valid){debugSkipped(beforeResult.invalidReason||"invalid before analysis");annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외","bad");return;}
+    const beforeResult=await stockfish.analyze(beforePosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: before analysis (${error?.message||"unknown"})`);return null;});
+    if(!beforeResult){fallbackStockfishGrade(context,"before analysis failed",capturedPiece);return;}
+    if(!beforeResult.valid){fallbackStockfishGrade(context,beforeResult.invalidReason||"invalid before analysis",capturedPiece);return;}
     if(state.engineRevision!==context.revision){debugSkipped("skipped: stale move revision");return;}
-    const playedResult=await stockfish.analyze(beforePosition.fen,{moves:[context.uci],depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: played analysis (${error?.message||"unknown"})`);annotateMoveLog(context,"?");log(`Stockfish 분석 실패: ${error?.message||"Worker 응답 없음"}`,"bad");return null;});
-    if(!playedResult)return;
-    if(!playedResult.valid){debugSkipped(playedResult.invalidReason||"invalid played analysis");annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외","bad");return;}
+    const playedResult=await stockfish.analyze(afterPosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: played analysis (${error?.message||"unknown"})`);return null;});
+    if(!playedResult){fallbackStockfishGrade(context,"played analysis failed",capturedPiece);return;}
+    if(!playedResult.valid){fallbackStockfishGrade(context,playedResult.invalidReason||"invalid played analysis",capturedPiece);return;}
     if(state.engineRevision!==context.revision||state.engineAwarded.has(context.moveId)){debugSkipped("skipped: stale or already awarded");return;}
     const rootSideBefore=context.mover,rootSidePlayed=enemyColor(context.mover);
     const before=normalizeScoreToColor(beforeResult.score,rootSideBefore,context.mover),after=normalizeScoreToColor(playedResult.score,rootSidePlayed,context.mover);
-    if(before===null||after===null){debugSkipped("invalid normalized score");annotateMoveLog(context,"Unrated");log("⚠ Stockfish 평가 제외","bad");return;}
+    if(before===null||after===null){fallbackStockfishGrade(context,"score normalization failed",capturedPiece);return;}
     context.bestmove=beforeResult.bestmove;
+    context.standardLegal=Boolean(context.info.movingIsStandard&&standardLegal);
     context.centipawnLoss=Math.max(0,before-after);
-    context.movingMaterial=PIECE_SCORE[movingPiece?.type]||0;
-    context.capturedMaterial=PIECE_SCORE[capturedPiece?.type]||0;
+    context.movingMaterial=movingPiece?pieceScore(movingPiece):0;
+    context.capturedMaterial=capturedPiece?pieceScore(capturedPiece):0;
     context.moverMaterialDelta=materialAfter[context.mover]-materialBefore[context.mover];
     context.freeCapture=materialAfter[enemyColor(context.mover)]<materialBefore[enemyColor(context.mover)]&&context.moverMaterialDelta>=0;
     const nonKingPieces=Object.values(materialBefore).reduce((sum,value)=>sum+value,0);
@@ -1637,6 +1887,7 @@ async function evaluateMoveWithStockfish(context){
     const result=classifyMove(context,before,after);
     const grade=stockfishGrade(result,context,Math.max(0,before-after));
     result.label=grade.label;
+    result.bonus=Math.round(result.bonus*(0.5+0.5*context.confidence));
     const stockfishBestmove=String(context.bestmove||"").toLowerCase();
     const bestmoveMatch=Boolean(playerUci&&stockfishBestmove===playerUci);
     if(!context.bonusEligible)result.bonus=0;
@@ -1650,7 +1901,7 @@ async function evaluateMoveWithStockfish(context){
     }
     state.engineAwarded.add(context.moveId);state.players[context.mover].money+=result.bonus;
     log(`${result.label} — +${fmt(result.bonus)} · 신뢰도 ${stockfishPositionAdapter.confidenceLabel(context.confidence)}`,"gold");render();
-  }catch(error){debugSkipped(`failed: evaluation pipeline (${error?.message||"unknown"})`);}
+  }catch(error){fallbackStockfishGrade(context,`analysis failed: ${error?.message||"Worker error"}`,capturedPiece);}
 }
 
 function render(){
@@ -1684,16 +1935,23 @@ function render(){
   document.getElementById("whiteTax").textContent=fmt(countTax("w"));document.getElementById("blackTax").textContent=fmt(countTax("b"));
   document.getElementById("whitePieceScore").textContent=`${countPieceScore("w")}점`;
   document.getElementById("blackPieceScore").textContent=`${countPieceScore("b")}점`;
+  document.getElementById("whiteDebt").textContent=fmt(state.players.w.creditDebt||0);
+  document.getElementById("blackDebt").textContent=fmt(state.players.b.creditDebt||0);
   document.getElementById("whiteCard").classList.toggle("active",state.turn==="w");document.getElementById("blackCard").classList.toggle("active",state.turn==="b");
   document.getElementById("turnLabel").textContent=`${state.turn==="w"?"백":"흑"}의 턴${activeInCheck()?" — 체크!":""}`;
   document.getElementById("apValue").textContent=`${p.ap} / ${CFG.maxAP}`;
   document.getElementById("moveState").textContent=`체스 수: ${p.moveUsed?"사용 완료":"사용 가능"}`;
   document.getElementById("selectedSquare").textContent=state.selected?sqName(state.selected.r,state.selected.c):"없음";
-  document.getElementById("salaryUpgradeText").textContent=`현재 ${fmt(p.salary)}/턴 · 인상 후 ${fmt(p.salary+CFG.salaryRaise)}/턴 · 비용 ${fmt(salaryCost(p))} · 1 AP`;
+  document.getElementById("salaryUpgradeText").textContent=langText("economy.salarySummary","\ud604\uc7ac {current}/\ud134 | \uc778\uc0c1 \ud6c4 {next}/\ud134 | \ube44\uc6a9 {cost} | 1 AP",{current:fmt(p.salary),next:fmt(p.salary+CFG.salaryRaise),cost:fmt(salaryCost(p))});
+  const actionSmall=id=>document.querySelector('#'+id+' small');
+  const jobSmall=actionSmall("jobBtn");if(jobSmall)jobSmall.textContent=langText("economy.jobReward","+ {amount} \xb7 1 AP",{amount:fmt(CFG.jobPay)});
+  const depositButton=document.getElementById("depositBtn");if(depositButton){depositButton.querySelector("b").textContent=langText("economy.depositTitle","\uc801\uae08 {amount}",{amount:fmt(CFG.depositAmount)});depositButton.querySelector("small").textContent=langText("economy.depositMaturity","4\ud134 \ub4a4 +{rate}%",{rate:Math.round((CFG.depositReturn-1)*100)});}
+  const ventureButton=document.getElementById("ventureBtn");if(ventureButton){ventureButton.querySelector("b").textContent=langText("economy.ventureTitle","\ubca4\ucc98 \ud22c\uc790 {amount}",{amount:fmt(CFG.ventureAmount)});ventureButton.querySelector("small").textContent=langText("economy.ventureMaturity","3\ud134 \ub4a4 {minimum}~{maximum}\ubc30",{minimum:CFG.ventureMinReturn.toFixed(2),maximum:CFG.ventureMaxReturn.toFixed(2)});}
+
   document.getElementById("insuranceStatus").innerHTML=`백 보험: ${w.insurance?"<strong>보유</strong>":"없음"} · 흑 보험: ${b.insurance?"<strong>보유</strong>":"없음"}`;
   const drawBtn=document.getElementById("drawBtn");
   if(drawBtn){
-    drawBtn.textContent=!state.drawOffer?"무승부 요청":state.drawOffer===state.turn?"요청 취소":"무승부 승인";
+    drawBtn.textContent=!state.drawOffer?langText("button.drawRequest","\ubb34\uc2b9\ubd80 \uc694\uccad"):state.drawOffer===state.turn?langText("button.drawCancel","\uc694\uccad \ucde8\uc18c"):langText("button.drawAccept","\ubb34\uc2b9\ubd80 \uc2b9\uc778");
     drawBtn.disabled=state.gameOver;
   }
   const orbitalBtn=document.getElementById("orbitalStrikeBtn"),orbitalStatus=document.getElementById("orbitalStatus"),orbitalReady=orbitalStrikeReady();
@@ -1705,8 +1963,8 @@ function render(){
 }
 function renderMaturities(){
   const p=current();const items=[];
-  for(const d of p.deposits)items.push(`적금 $500 · ${Math.max(0,d.due-p.ownTurns)}회 내 턴 남음`);
-  for(const v of p.ventures)items.push(`벤처 $300 · ${Math.max(0,v.due-p.ownTurns)}회 내 턴 남음`);
+  for(const d of p.deposits)items.push(`적금 ${fmt(d.principal)} · ${Math.max(0,d.due-p.ownTurns)}회 내 턴 남음`);
+  for(const v of p.ventures)items.push(`벤처 ${fmt(v.principal)} · ${Math.max(0,v.due-p.ownTurns)}회 내 턴 남음`);
   document.getElementById("maturityList").textContent=items.length?items.join(" / "):"진행 중인 적금·투자 없음";
 }
 function renderStocks(){

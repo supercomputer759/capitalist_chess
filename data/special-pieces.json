@@ -685,7 +685,7 @@
           }
         }
       ],
-      "description": "처음 공격받았을 때 공격자의 특수능력을 복사하거나 공격을 반사한다."
+      "description": "처음 포획당할 때 공격을 1회 반사한다."
     },
     "wall": {
       "id": "wall",
@@ -747,9 +747,9 @@
       "emoji": "☢️",
       "pieceScore": 7.0,
       "rarity": "rare",
-      "price": 1900,
+      "price": 2100,
       "buyAP": 2,
-      "tax": 480,
+      "tax": 200,
       "stock": {
         "max": 1,
         "restockChance": 0.16,

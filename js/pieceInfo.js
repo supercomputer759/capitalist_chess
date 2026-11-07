@@ -9,12 +9,13 @@
     const fake=Boolean(def.fakeKing||(def.abilities||[]).some(a=>a.id==="fake_king_identity"));
     const visibleName=fake&&!viewerOwns?"킹":def.name;
     const visibleDescription=fake&&!viewerOwns?"체스판에서 킹으로 보이는 기물.":def.description;
-    const icon=def.icon||def.emoji||"♟";
+    const icon=window.specialChessVisual?window.specialChessVisual(def,ownerColor||"w",visibleName):(def.icon||def.emoji||"\u265f");
+    const chessGlyph=window.specialChessGlyph?window.specialChessGlyph(def):"\u2659";
     const score=def.score??def.pieceScore??0;
     const tax=def.maintenanceTax??def.tax??0;
     const cells=movementCells(def); const marks=new Set(cells.map(([r,c])=>`${r+2},${c+2}`));
-    let mini="<div class=\"movement-mini aria-label=\"행마 미리보기\">";
-    for(let r=0;r<5;r++)for(let c=0;c<5;c++)mini+=`<span class=\"mini-cell ${r===2&&c===2?"center":""} ${marks.has(`${r},${c}`)?"move":""}\">${r===2&&c===2?(def.icon||"•"):""}</span>`;
+    let mini="<div class=\"movement-mini\" aria-label=\"행마 미리보기\">";
+    for(let r=0;r<5;r++)for(let c=0;c<5;c++)mini+=`<span class=\"mini-cell ${r===2&&c===2?"center":""} ${marks.has(`${r},${c}`)?"move":""}\">${r===2&&c===2?chessGlyph:""}</span>`;
     mini+="</div>";
     const hiddenFake=!viewerOwns&&fake;
     const abilities=hiddenFake?"<li>공개되지 않은 능력</li>":(def.abilities||[]).map(a=>`<li>${a.id}</li>`).join("")||"<li>없음</li>";
