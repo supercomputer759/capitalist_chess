@@ -7,6 +7,7 @@
   <title data-i18n="brand.name">자본주의 체스</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="assets/effects/cataclysm/host.css" />
+  <link rel="stylesheet" href="assets/economy.css" />
 </head>
 <body>
   <div class="lobby-screen" id="lobbyScreen">
@@ -21,6 +22,7 @@
       </div>
       <section class="lobby-hub" id="lobbyHub">
         <div class="lobby-hub-head"><h2 data-i18n="lobby.hubTitle">싱글플레이 허브</h2><div class="lobby-statuses"><span id="lobbyInternetStatus">인터넷: 로컬 모드</span><span id="lobbyConnectionStatus">방: 로컬 게임</span></div></div>
+        <section id="economyPresetPanel" class="economy-preset-panel"></section>
         <div class="lobby-settings">
           <label><span data-i18n="lobby.initialMoney">초기 자금</span><input id="lobbyMoney" type="number" min="0" step="100" value="1600"></label>
           <label><span data-i18n="lobby.initialSalary">초기 월급</span><input id="lobbySalary" type="number" min="0" step="10" value="190"></label>
@@ -136,6 +138,9 @@
           <div class="special-stock-status" id="specialLoadStatus" data-i18n="shop.loading">특수기물 데이터 불러오는 중…</div>
         </section>
         <section class="panel economy-panel"><div class="panel-head"><h2 data-i18n="economy.title">노동 · 현금흐름</h2><span data-i18n="economy.balance">경제 밸런스 v2</span></div><div class="econ-grid"><button id="jobBtn"><b data-i18n="economy.job">알바</b><small>+ $100 · 1 AP</small></button><button id="salaryBtn"><b data-i18n="economy.salary">월급 인상</b><small id="salaryUpgradeText">비용 계산 중</small></button><button id="depositBtn"><b data-i18n="economy.deposit">적금 $500</b><small>4회 내 턴 뒤 +10%</small></button><button id="ventureBtn"><b data-i18n="economy.venture">벤처 투자 $300</b><small>3회 내 턴 뒤 0.5~1.75×</small></button></div><div class="maturity" id="maturityList"></div></section>
+        <div id="financeRisk" class="finance-risk" role="status"></div>
+        <details class="panel expansion-panel" id="auctionPanel"><summary data-i18n="expansion.auction">경매장</summary><div id="auctionContent"></div></details>
+        <details class="panel expansion-panel" id="financePanel"><summary data-i18n="expansion.finance">금융 자동화</summary><div id="financeContent"></div></details>
         <section class="panel special-panel"><div class="panel-head"><h2 data-i18n="special.title">특수 행동</h2><span data-i18n="special.hint">선택 칸에서 기물 능력 사용</span></div><div class="econ-grid"><button id="promoteBtn"><b data-i18n="special.promote">즉시 승급</b><small data-i18n="special.promoteHint">선택 폰 → 퀸 · $1,500 · 1 AP</small></button><button id="teleportBtn"><b data-i18n="special.teleport">즉시이동</b><small data-i18n="special.teleportHint">선택 기물 → 빈 칸 · $900 · 2 AP</small></button><button id="insuranceBtn"><b data-i18n="special.insurance">킹 부활 보험</b><small data-i18n="special.insuranceHint">$2,000 · 2 AP · 1회</small></button><button id="orbitalStrikeBtn" class="orbital-action"><b data-i18n="special.orbital">☢ ORBITAL NUCLEAR BEAM</b><small data-i18n="special.orbitalHint">$24,000 · 턴 AP 전체</small></button></div><div class="orbital-status" id="orbitalStatus"></div><div class="insurance-status" id="insuranceStatus"></div></section>
         <section class="panel stocks-panel"><div class="panel-head"><h2 data-i18n="market.title">증권시장</h2><span id="marketTurn" data-i18n="market.opening">시장 개장</span></div><div class="ticker" id="ticker"></div><div class="stock-controls"><select id="stockSelect"></select><input id="stockQty" type="number" min="1" max="99" value="1" /><button id="stockBuyBtn" data-i18n="button.stockBuy">매수</button><button id="stockSellBtn" data-i18n="button.stockSell">매도</button></div><div class="portfolio" id="portfolio"></div><div class="news"><h3 data-i18n="market.news">뉴스</h3><div id="newsFeed"></div></div></section>
         <section class="panel rules-panel"><div class="panel-head"><h2 data-i18n="rules.title">현재 프로토타입 룰</h2></div><ul><li data-i18n="rules.1">양측은 킹 1개, $1,600, 턴 시작 월급 $190으로 시작.</li><li data-i18n="rules.2">턴당 AP 3. 일반 체스 이동은 턴당 1회.</li><li data-i18n="rules.3">특수기물은 자기 진영에 배치하며, 다음 자기 턴부터 능력이 켜짐.</li><li data-i18n="rules.4">기물 구매는 신용카드 기사가 있으면 $3,500 한도 내 외상 가능. 부채는 매 턴 이자가 붙고 자동 상환됨.</li><li data-i18n="rules.5">상대 기물을 잡으면 그 기물 가격만큼 즉시 현금 획득.</li><li data-i18n="rules.6">턴 시작 때 월급 + 기물 유지세를 정산. 현금이 -$900 이하면 파산.</li><li data-i18n="rules.7">뉴스는 개별 기업 또는 시장 전체 주가를 흔듦.</li><li data-i18n="rules.8">체크 상태에서도 턴 종료 가능. 승리는 상대 킹을 실제로 포획할 때만 발생.</li></ul></section>
@@ -177,6 +182,8 @@
   <script src="js/cataclysmBridge.js"></script>
   <script src="js/orbitalBeamVfx.js"></script>
   <script src="js/stockfishEngine.js"></script>
+  <script src="js/economyRules.js"></script>
+  <script src="js/economyUI.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

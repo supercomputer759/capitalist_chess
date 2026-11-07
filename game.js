@@ -111,12 +111,18 @@ function makePlayer(color) {
     stockBasis: Object.fromEntries(Object.keys(STOCKS).map(k=>[k,0])),
     deposits: [],
     ventures: [],
+    automation: {...window.EconomyRules.DEFAULT_AUTOMATION},
+    warehouse: [],
+    receivables: [],
+    pendingInterest: 0,
     ownTurns: 0
   };
 }
 
 const state = {
   started:false,
+  economyRules:window.EconomyRules.preset("standard"),
+  auctions:[],auctionSerial:0,lobbySettings:{},
   stockfishEnabled:true,
   specialEnabled:true,
   orbitalSettings:{...CFG.orbitalStrike},
@@ -227,6 +233,7 @@ function serializeGameState(){
     specialEnabled:state.specialEnabled,
     orbitalSettings:state.orbitalSettings,
     economySettings:economySettingsSnapshot(),
+    economyRules:state.economyRules,auctions:state.auctions,auctionSerial:state.auctionSerial,lobbySettings:state.lobbySettings,
     revision:state.engineRevision,
     board:state.board,
     turn:state.turn,
@@ -247,6 +254,7 @@ function serializeGameState(){
 }
 function economySettingsSnapshot(){
   return {
+    startMoney:CFG.startMoney,startSalary:CFG.startSalary,maxAP:CFG.maxAP,
     jobPay:CFG.jobPay,
     salaryRaise:CFG.salaryRaise,
     salaryBaseCost:CFG.salaryBaseCost,
@@ -264,6 +272,9 @@ function applyEconomySettings(settings={}){
     return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
   };
   CFG.jobPay=number("jobPay",CFG.jobPay,0,100000);
+  CFG.startMoney=number("startMoney",CFG.startMoney,0,1000000);
+  CFG.startSalary=number("startSalary",CFG.startSalary,0,1000000);
+  CFG.maxAP=Math.round(number("maxAP",CFG.maxAP,1,9));
   CFG.salaryRaise=number("salaryRaise",CFG.salaryRaise,0,100000);
   CFG.salaryBaseCost=number("salaryBaseCost",CFG.salaryBaseCost,0,1000000);
   CFG.salaryUpgradeMultiplier=number("salaryUpgradeMultiplier",CFG.salaryUpgradeMultiplier,1,10);
@@ -275,13 +286,34 @@ function applyEconomySettings(settings={}){
 }
 function applyGameState(snapshot){
   if(!snapshot||snapshot.schemaVersion!==1)return false;
+  const previousPriceMultiplier=state.economyRules.priceMultiplier;
   if(snapshot.economySettings)applyEconomySettings(snapshot.economySettings);
+  state.economyRules=window.EconomyRules.normalize(snapshot.economyRules);
+  state.auctions=snapshot.auctions||[];state.auctionSerial=Number(snapshot.auctionSerial)||0;
+  state.lobbySettings=snapshot.lobbySettings||{};
+  if(!snapshot.started)for(const [id,value] of Object.entries(state.lobbySettings)){
+    const input=document.getElementById(id);if(!input?.matches(".lobby-settings input,.lobby-economy-settings input,.lobby-rules input:not([readonly]):not(#lobbyKingCapture)"))continue;
+    if(input.type==="checkbox")input.checked=Boolean(value);else input.value=value;
+  }
   const wasStarted=state.started;
   state.started=Boolean(snapshot.started);state.stockfishEnabled=snapshot.stockfishEnabled!==false;state.specialEnabled=snapshot.specialEnabled!==false;if(snapshot.orbitalSettings){state.orbitalSettings={...CFG.orbitalStrike,...snapshot.orbitalSettings};Object.assign(CFG.orbitalStrike,state.orbitalSettings);}CFG.orbitalStrike.apCost=CFG.maxAP;state.orbitalSettings.apCost=CFG.maxAP;document.querySelector(".shop-panel")?.classList.toggle("special-disabled",!state.specialEnabled);
   state.board=snapshot.board||state.board;state.turn=snapshot.turn||state.turn;state.turnNo=Number(snapshot.turnNo||state.turnNo);
   state.players=snapshot.players||state.players;for(const color of ["w","b"]){const player=state.players[color];player.creditDebt=Number(player.creditDebt||0);player.stockBasis||=Object.fromEntries(Object.keys(STOCKS).map(key=>[key,0]));player.holdings||=Object.fromEntries(Object.keys(STOCKS).map(key=>[key,0]));}state.visits=snapshot.visits||{};state.properties=snapshot.properties||{};state.lastMove=snapshot.lastMove||null;
+  for(const color of ["w","b"])window.EconomyRules.player(state.players[color]);
   const wasGameOver=state.gameOver;state.gameOver=Boolean(snapshot.gameOver);state.gameResult=snapshot.gameResult||null;state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
-  state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();if(state.started&&!wasStarted){document.getElementById("lobbyScreen")?.classList.add("hidden");startTurnTimer();}if(state.gameOver&&!wasGameOver&&state.gameResult)showGameResult();return true;
+  if(previousPriceMultiplier!==state.economyRules.priceMultiplier)buildShop();
+  state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();
+  if(state.started&&!wasStarted){
+    document.getElementById("lobbyScreen")?.classList.add("hidden");startTurnTimer();
+    if(multiplayerRole()==="guest"){
+      const automation=window.EconomyUI.initialAutomation("b");
+      for(const key of Object.keys(window.EconomyRules.DEFAULT_AUTOMATION)){
+        window.EconomyUI.send("automation",{key,value:typeof automation?.[key]==="boolean"?automation[key]:true});
+      }
+    }
+  }
+  if(state.gameOver&&!wasGameOver&&state.gameResult)showGameResult();
+  return true;
 }
 window.serializeGameState=serializeGameState;window.applyGameState=applyGameState;
 function multiplayerRole(){
@@ -296,9 +328,46 @@ function multiplayerOwnsColor(color){
   return true;
 }
 function multiplayerOwnsSquare(square){return Boolean(square&&multiplayerOwnsColor(state.board[square.r]?.[square.c]?.color));}
+function economyFeature(key){return window.EconomyRules.enabled(state,key);}
+function economyPrice(value){return window.EconomyRules.price(state,Number(value)||0);}
+window.economyPrice=economyPrice;
+function publishEconomyLobby(){
+  if(state.started||["guest","spectator"].includes(multiplayerRole()))return;
+  state.economyRules=window.EconomyUI.lobbyRules();state.lobbySettings={};
+  document.querySelectorAll(".lobby-settings input,.lobby-economy-settings input,.lobby-rules input:not([readonly]):not([disabled])").forEach(input=>{
+    state.lobbySettings[input.id]=input.type==="checkbox"?input.checked:input.value;
+  });
+  if(multiplayerRole()==="host")window.multiplayer.sendState(serializeGameState());
+}
+function handleEconomyExpansion(color,action){
+  const R=window.EconomyRules,UI=window.EconomyUI,p=R.player(state.players[color]);
+  if(!state.started||state.gameOver)return;
+  let ok=false;
+  if(action.op==="automation"&&economyFeature("automation")){
+    if(Object.hasOwn(R.DEFAULT_AUTOMATION,action.key)&&typeof action.value==="boolean"){
+      p.automation[action.key]=action.value;ok=true;
+      if(multiplayerOwnsColor(color))UI.saveAutomation(p);
+    }
+  }else if(state.turn===color){
+    if(action.op==="list")ok=R.list(state,color,action.square,action.startPrice,piecePrice,p=>p.type==="k"||isKingLike(p));
+    if(action.op==="bid")ok=R.bid(state,color,action.id,action.amount);
+    if(action.op==="deploy")ok=R.deploy(state,color,action.id,action.square);
+    if(economyFeature("automation")){
+      if(action.op==="claim"&&p.receivables.length){R.claim(p);ok=true;}
+      if(action.op==="interest"&&p.pendingInterest){R.settleInterest(p);ok=true;}
+      if(action.op==="repay"&&p.money>0&&((p.creditDebt||0)+p.pendingInterest)>0){R.repay(p);ok=true;}
+    }
+  }
+  if(ok){
+    if(["list","deploy"].includes(action.op)){state.engineRevision++;state.selected=null;state.legalTargets=[];state.mode=null;}
+    if(action.op!=="automation")log(UI.t("done"),"good");
+  }else log(UI.t("failed"),"bad");
+  render();
+}
 function rejectRemoteTurn(){log(langText("notice.notYourTurn","상대 턴에는 행동할 수 없어."),"bad");render();}
 window.handleMultiplayerAction=function(action){
   if(multiplayerRole()!=="host"||!action)return;
+  if(action.type==="economyExpansion")return handleEconomyExpansion("b",action);
   if(action.type==="resign")return finishGame("w","흑 기권","result.resigned",{side:"b"});
   if(action.type==="orbitalStrike")return executeOrbitalStrike(action.target);
   if(state.turn!=="b")return;
@@ -447,14 +516,19 @@ function setupLobby(){
     tools?.classList.toggle("hidden",!isMulti);
     start.textContent=langText(isMulti?"lobby.startMulti":"lobby.startSingle",isMulti?"\uba40\ud2f0\ud50c\ub808\uc774 \uc2dc\uc791":"\uc2f1\uae00\ud50c\ub808\uc774 \uc2dc\uc791");
     start.disabled=isMulti&&!role;
-    document.querySelectorAll(".lobby-settings input,.lobby-rules input,.lobby-economy-settings input").forEach(input=>input.disabled=isMulti&&role==="guest");
+    document.querySelectorAll(".lobby-settings input:not([readonly]),.lobby-rules input:not(#lobbyKingCapture):not([readonly]),.lobby-economy-settings input").forEach(input=>input.disabled=isMulti&&["guest","spectator"].includes(role));
+    window.EconomyUI.syncLobby();
   };
   const apply=()=>{
     const hostRole=multiplayerRole();
     if(mode==="multi"&&hostRole==="guest")return;
+    state.economyRules=window.EconomyUI.lobbyRules();
+    for(const color of ["w","b"])if(multiplayerOwnsColor(color)){
+      state.players[color].automation=window.EconomyUI.initialAutomation(color);window.EconomyRules.player(state.players[color]);
+    }
     CFG.startMoney=lobbyNumber("lobbyMoney",1600,0,1000000);
     CFG.startSalary=lobbyNumber("lobbySalary",190,0,1000000);
-    CFG.maxAP=lobbyNumber("lobbyAP",3,1,9);
+    CFG.maxAP=Math.round(lobbyNumber("lobbyAP",3,1,9));
     const seconds=Math.max(60,Math.round(lobbyNumber("lobbyClock",15,1,180)*60));
     applyEconomySettings({
       jobPay:lobbyNumber("lobbyJobPay",CFG.jobPay,0,100000),
@@ -473,6 +547,7 @@ function setupLobby(){
     CFG.orbitalStrike.price=lobbyNumber("lobbyOrbitalPrice",24000,0,10000000);
     CFG.orbitalStrike.apCost=CFG.maxAP;
     state.orbitalSettings={...CFG.orbitalStrike};
+    buildShop();
     for(const color of ["w","b"]){
       state.players[color].money=CFG.startMoney;
       state.players[color].salary=CFG.startSalary;
@@ -511,6 +586,7 @@ function setupLobby(){
     if(connection&&mode==="multi")connection.textContent=detail||window.multiplayer.status;
     if(roomStatus&&mode==="multi"&&!detail)roomStatus.textContent=window.multiplayer.status;
     update();
+    if(multiplayerRole()==="host"&&!state.started)publishEconomyLobby();
   };
   window.addEventListener("game-language-change",()=>{renderInternet(window.multiplayer?.status||"offline");update();});
   renderInternet(window.multiplayer?.status||"offline");
@@ -535,6 +611,9 @@ async function init() {
   buildStocks();
   bindControls();
   bindAudioControls();
+  window.EconomyUI.init({state,role:multiplayerRole,action:handleEconomyExpansion,
+    publish:publishEconomyLobby,log,pieceName,sideName,money:fmt,tax:countTax,bankruptcy:CFG.bankruptcy});
+  document.querySelectorAll(".lobby-settings input,.lobby-rules input,.lobby-economy-settings input").forEach(input=>input.addEventListener("change",publishEconomyLobby));
   if(window.multiplayer){window.multiplayer.onAction=action=>window.handleMultiplayerAction(action);window.multiplayer.onState=snapshot=>applyGameState(snapshot);window.multiplayer.bindUI();}
   addNews({id:"opening",companyId:"market",company:"시장",text:"자본주의 체스 거래소가 개장했다. 모두의 통장이 무사하길."});
   const readyLog=log(langText("log.gameReady","게임 준비 완료. 로비에서 설정한 뒤 시작해."),"gold");
@@ -631,8 +710,8 @@ function pieceName(p,viewerColor=state.turn){
   if(p?.specialId)return isFakeKingDef(def)&&p.color!==viewerColor?langText("piece.standard.k","킹"):specialPieceName(def);
   return stockPieceName(p.type);
 }
-function piecePrice(p){return Number(pieceDef(p)?.price||0);}
-function pieceCaptureReward(p){return Number(pieceDef(p)?.captureReward??pieceDef(p)?.price??0);}
+function piecePrice(p){return economyPrice(pieceDef(p)?.price||0);}
+function pieceCaptureReward(p){return economyPrice(pieceDef(p)?.captureReward??pieceDef(p)?.price??0);}
 function pieceScore(p){return p.specialId?(p.specialId==="venture_knight"&&Number.isFinite(Number(p.ventureScore))?Number(p.ventureScore):specialScore(pieceDef(p))):Number(pieceDef(p)?.score||0);}
 function isKingLike(p){const def=p?.specialId?specialDef(p.specialId):null;return p?.type==="k"||Boolean(p?.specialId&&!isFakeKingDef(def)&&isCountsAsKingDef(def));}
 function legacyPieceVisual(p){return pieceVisual(p);}
@@ -654,6 +733,7 @@ function fromName(s){ return {r:8-Number(s[1]), c:FILES.indexOf(s[0])}; }
 function inBounds(r,c){ return r>=0 && r<8 && c>=0 && c<8; }
 function cloneBoard(board=state.board){ return board.map(row=>row.map(p=>p?{...p}:null)); }
 function countTax(color){
+  if(!economyFeature("tax"))return 0;
   let n=0;
   for(const row of state.board) for(const p of row) if(p?.color===color) n+=p.specialId?specialTax(pieceDef(p)):Number(PIECES[p.type]?.tax||0);
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=state.board[r][c];if(p?.color===color&&p.specialId&&operationalSpecialAt(r,c,p)){
@@ -672,10 +752,10 @@ function spend(player, amount, reason=langText("action.expense","지출")){
   player.money -= amount; return true;
 }
 function creditTerms(color=state.turn){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const unit=state.board[r][c];if(unit?.color===color&&unit.specialId==="credit_card_knight"&&operationalSpecialAt(r,c,unit)){const ability=specialAbility(specialDef(unit.specialId),"allow_credit_purchases");return runAbility(ability.id,{state,piece:unit,owner:state.players[color],params:ability.params||{},event:"purchase"})||{};}}return {};}
-function hasCreditLine(color=state.turn){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const unit=state.board[r][c];if(unit?.color===color&&unit.specialId==="credit_card_knight"&&operationalSpecialAt(r,c,unit))return Number(creditTerms(color).creditLimit)>0;}return false;}
+function hasCreditLine(color=state.turn){if(!economyFeature("credit"))return false;for(let r=0;r<8;r++)for(let c=0;c<8;c++){const unit=state.board[r][c];if(unit?.color===color&&unit.specialId==="credit_card_knight"&&operationalSpecialAt(r,c,unit))return Number(creditTerms(color).creditLimit)>0;}return false;}
 function purchaseAndAP(amount,apCost,label){
   const p=current(),limit=hasCreditLine()?Number(creditTerms().creditLimit)||0:0;
-  if(p.money+Math.max(0,limit-Number(p.creditDebt||0))<amount){log(langText("log.creditInsufficient","{v0}: 구매 자금과 신용 한도 부족",{v0:label}),`bad`);return false;}
+  if(p.money+Math.max(0,limit-Number(p.creditDebt||0)-Number(p.pendingInterest||0))<amount){log(langText("log.creditInsufficient","{v0}: 구매 자금과 신용 한도 부족",{v0:label}),`bad`);return false;}
   if(p.ap<apCost){log(langText("log.apRequired","{v0}: AP 부족 ({v1} 필요)",{v0:label,v1:apCost}),`bad`);return false;}
   const shortage=Math.max(0,amount-p.money);p.money-=Math.min(amount,Math.max(0,p.money));p.creditDebt=Number(p.creditDebt||0)+shortage;p.ap-=apCost;
   if(shortage)log(langText("log.creditAdded","{v0}: 신용 구매 +{v1} 부채",{v0:label,v1:fmt(shortage)}),`gold`);
@@ -694,7 +774,7 @@ function payAndAP(amount, apCost, label){
 }
 function activeInCheck(){ return isKingInCheck(state.turn, state.board); }
 function canEconomy(){
-  return true;
+  return state.started&&!state.gameOver&&multiplayerRole()!=="spectator";
 }
 
 function rollSpecialStock(def){
@@ -871,7 +951,7 @@ function buildShop(){
   const el=document.getElementById("pieceShop"); el.innerHTML="";
   ["p","n","b","r","q"].forEach(t=>{
     const btn=document.createElement("button"); btn.className="shop-item";
-    btn.innerHTML=`<span class="shop-piece"><img id="shop-${t}" alt="${stockPieceName(t)}"></span><b>${stockPieceName(t)}</b><small>${fmt(PIECES[t].price)}</small>`;
+    btn.innerHTML=`<span class="shop-piece"><img id="shop-${t}" alt="${stockPieceName(t)}"></span><b>${stockPieceName(t)}</b><small>${fmt(economyPrice(PIECES[t].price))}</small>`;
     btn.addEventListener("click",()=>startPurchase(t));
     btn.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();showPieceInfo(normalPieceInfo({type:t}),null,true,t);}});
     btn.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
@@ -886,7 +966,7 @@ function buildSpecialShop(){
   for(const def of SpecialPieces.list()){
     const btn=document.createElement("button");btn.className="shop-item special-shop-item";btn.dataset.specialId=def.id;
     const name=specialPieceName(def);
-    btn.innerHTML=`<span class="shop-piece special-shop-icon">${specialChessVisual(def,"w",name)}</span><b>${name}</b><small>${fmt(def.price)} · ${def.buyAP} AP</small><em class="special-stock" id="special-stock-${def.id}">${langText("shop.stock","재고 {count}",{count:0})}</em>`;
+    btn.innerHTML=`<span class="shop-piece special-shop-icon">${specialChessVisual(def,"w",name)}</span><b>${name}</b><small>${fmt(economyPrice(def.price))} · ${def.buyAP} AP</small><em class="special-stock" id="special-stock-${def.id}">${langText("shop.stock","재고 {count}",{count:0})}</em>`;
     btn.addEventListener("click",()=>startSpecialPurchase(def.id));
     btn.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();showPieceInfo(def,state.specialStock[def.id]||0,true,def.id,def.id);}});
     btn.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
@@ -951,6 +1031,7 @@ function clickSquare(r,c){
     clearAnnotationHover();
     renderAnnotations();
   }
+  if(state.mode==="warehouse-deploy"){window.EconomyUI.send("deploy",{id:state.pendingWarehouseId,square:{r,c}});return;}
   const p=state.board[r][c];
   const key=sqName(r,c);
 
@@ -1051,7 +1132,7 @@ function startPurchase(type){
   if(multiplayerRole()==="spectator")return log(langText("notice.spectatorBuy","관전자는 구매할 수 없어."),"bad");
   if(!canEconomy()) return;
   if(current().ap<1) return log(langText("notice.buyAP","기물 구매: AP 부족"),"bad");
-  if(current().money<PIECES[type].price&&!hasCreditLine()) return log(langText("log.purchaseRequired","기물 구매: {v0} 필요",{v0:fmt(PIECES[type].price)}),`bad`);
+  if(current().money<economyPrice(PIECES[type].price)&&!hasCreditLine()) return log(langText("log.purchaseRequired","기물 구매: {v0} 필요",{v0:fmt(economyPrice(PIECES[type].price))}),`bad`);
   state.mode="buy"; state.pendingPiece=type; state.selected=null; state.legalTargets=[];
   log(langText("log.purchaseSelect","{piece} 구매 위치를 선택해.",{piece:stockPieceName(type)}),"gold"); render();
 }
@@ -1061,7 +1142,7 @@ function startSpecialPurchase(id){
   if(!def)return log(langText("log.pieceDataMissing","특수기물 데이터를 찾을 수 없어."),"bad");
   const name=specialPieceName(def);
   if(stock<=0)return log(`${name}: ${langText("shop.soldOut","품절")}`,"bad");
-  if(current().money<Number(def.price)&&!hasCreditLine())return log(langText("log.notEnoughFunds","{piece}: 돈 부족 ({amount} 필요)",{piece:name,amount:fmt(def.price)}),"bad");
+  if(current().money<economyPrice(def.price)&&!hasCreditLine())return log(langText("log.notEnoughFunds","{piece}: 돈 부족 ({amount} 필요)",{piece:name,amount:fmt(economyPrice(def.price))}),"bad");
   if(current().ap<Number(def.buyAP))return log(langText("log.notEnoughAP","{piece}: AP 부족 ({amount} 필요)",{piece:name,amount:def.buyAP}),"bad");
   state.mode="special-buy";state.pendingSpecialId=id;state.pendingPiece=null;state.selected=null;state.legalTargets=[];
   log(langText("log.purchaseSelect","{piece} 구매 위치를 선택해.",{piece:name}),"gold");render();
@@ -1071,7 +1152,7 @@ function finishPurchase(r,c){
   if(state.mode==="special-buy")return finishSpecialPurchase(r,c);
   const type=state.pendingPiece;
   if(!homeZone(state.turn,r) || state.board[r][c]) return log(langText("notice.homeEmpty","자기 진영의 빈 칸에만 배치 가능해."),"bad");
-  const price=PIECES[type].price;
+  const price=economyPrice(PIECES[type].price);
   if(!purchaseAndAP(price,1,langText("action.buyPiece","기물 구매"))) return;
   state.board[r][c]=purchasedPiece(type,state.turn);
   playSound("buy");
@@ -1082,9 +1163,9 @@ function finishSpecialPurchase(r,c){
   const id=state.pendingSpecialId,def=specialDef(id);
   if(!def||!homeZone(state.turn,r)||state.board[r][c])return log(langText("notice.homeEmpty","자기 진영의 빈 칸에만 배치 가능해."),"bad");
   if((state.specialStock[id]||0)<=0)return log(langText("log.soldOut","{v0}: 품절",{v0:specialPieceName(def)}),"bad");
-  if(current().money<Number(def.price)&&!hasCreditLine())return log(langText("log.specialMoney","{v0}: 돈 부족",{v0:specialPieceName(def)}),"bad");
+  if(current().money<economyPrice(def.price)&&!hasCreditLine())return log(langText("log.specialMoney","{v0}: 돈 부족",{v0:specialPieceName(def)}),"bad");
   if(current().ap<Number(def.buyAP))return log(langText("log.specialAP","{v0}: AP 부족",{v0:specialPieceName(def)}),"bad");
-  if(!purchaseAndAP(Number(def.price),Number(def.buyAP),langText("log.specialPurchase","{v0} 구매",{v0:specialPieceName(def)})))return;
+  if(!purchaseAndAP(economyPrice(def.price),Number(def.buyAP),langText("log.specialPurchase","{v0} 구매",{v0:specialPieceName(def)})))return;
   state.specialStock[id]--;
   if(isCountsAsKingDef(def)&&!isFakeKingDef(def)){
     for(let rr=0;rr<8;rr++)for(let cc=0;cc<8;cc++){
@@ -1095,7 +1176,7 @@ function finishSpecialPurchase(r,c){
   }
   state.board[r][c]=specialPiece(id,state.turn);
   playSound("buy");
-  log(langText("log.piecePlaced","{square}에 {piece} 배치 -{price} / {ap} AP · 다음 자기 턴에 활성화",{square:sqName(r,c),piece:specialPieceName(def),price:fmt(def.price),ap:def.buyAP}));
+  log(langText("log.piecePlaced","{square}에 {piece} 배치 -{price} / {ap} AP · 다음 자기 턴에 활성화",{square:sqName(r,c),piece:specialPieceName(def),price:fmt(economyPrice(def.price)),ap:def.buyAP}));
   state.mode=null;state.pendingSpecialId=null;render();
 }
 
@@ -1342,7 +1423,7 @@ function makeMove(fr,fc,tr,tc){
 function visitSquare(r,c,color){
   const key=sqName(r,c); state.visits[key]=(state.visits[key]||0)+1;
   const owner=state.properties[key];
-  if(owner && owner!==color){
+  if(economyFeature("property")&&owner && owner!==color){
     let toll=propertyToll(key),multiplier=1;
     const square={r,c};
     for(let rr=0;rr<8;rr++)for(let cc=0;cc<8;cc++){
@@ -1358,10 +1439,10 @@ function visitSquare(r,c,color){
     log(langText("log.toll","{v0} 통행료: {v1} -{v2} → {v3}",{v0:key,v1:sideName(color),v2:fmt(toll),v3:sideName(owner)}),"bad");
   }
 }
-function propertyPrice(key){ return CFG.propertyBase + (state.visits[key]||0)*CFG.propertyVisitPrice; }
-function propertyToll(key){ return CFG.tollBase+(state.visits[key]||0)*CFG.tollVisitIncrement; }
+function propertyPrice(key){ return economyPrice(CFG.propertyBase + (state.visits[key]||0)*CFG.propertyVisitPrice); }
+function propertyToll(key){ return economyPrice(CFG.tollBase+(state.visits[key]||0)*CFG.tollVisitIncrement); }
 function buyProperty(){
-  if(!canEconomy()||!state.selected) return;
+  if(!economyFeature("property")||!canEconomy()||!state.selected) return;
   const key=sqName(state.selected.r,state.selected.c), visits=state.visits[key]||0;
   if(visits<1) return log(langText("notice.unvisitedProperty","아직 아무도 밟지 않은 허허벌판이야. 가치가 없어ㅋㅋ"),"bad");
   if(state.properties[key]) return log(langText("notice.propertyOwned","이미 주인이 있는 칸이야."),"bad");
@@ -1421,20 +1502,20 @@ function renderTileInfo(key){
   document.getElementById("pieceAbilityBtn")?.addEventListener("click",()=>beginPieceAbility(ability.id));
 }
 
-function doJob(){ if(!canEconomy()||!useAP(1,langText("economy.job","알바")))return;current().money+=CFG.jobPay;playSound("click");log(langText("log.job","알바 완료 +{v0} (킹이 알바 뛰는 세계관)",{v0:fmt(CFG.jobPay)}),`good`);render(); }
+function doJob(){ if(!economyFeature("labor")||!canEconomy()||!useAP(1,langText("economy.job","알바")))return;current().money+=CFG.jobPay;playSound("click");log(langText("log.job","알바 완료 +{v0} (킹이 알바 뛰는 세계관)",{v0:fmt(CFG.jobPay)}),`good`);render(); }
 function salaryCost(p=current()){ return Math.round(CFG.salaryBaseCost*Math.pow(CFG.salaryUpgradeMultiplier,p.salaryLevel)); }
 function raiseSalary(){
-  if(!canEconomy())return; const p=current(),cost=salaryCost(p);
+  if(!economyFeature("salary")||!canEconomy())return; const p=current(),cost=salaryCost(p);
   if(!payAndAP(cost,1,langText("economy.salary","월급 인상")))return;
   p.salaryLevel++;p.salary+=CFG.salaryRaise;log(langText("log.salaryRaised","월급 인상! 다음부터 {v0}/턴",{v0:fmt(p.salary)}),`good`);render();
 }
 function makeDeposit(){
-  if(!canEconomy())return;const p=current();
+  if(!economyFeature("deposits")||!canEconomy())return;const p=current();
   if(!payAndAP(CFG.depositAmount,1,langText("economy.deposit","적금")))return;
   p.deposits.push({principal:CFG.depositAmount,due:p.ownTurns+4});log(langText("log.depositMade","적금 가입 -{v0} · 4회 내 턴 뒤 만기",{v0:fmt(CFG.depositAmount)}),`gold`);render();
 }
 function makeVenture(){
-  if(!canEconomy())return;const p=current();
+  if(!economyFeature("ventures")||!canEconomy())return;const p=current();
   if(!payAndAP(CFG.ventureAmount,1,langText("economy.venture","벤처 투자")))return;
   const mult=+(CFG.ventureMinReturn+Math.random()*(CFG.ventureMaxReturn-CFG.ventureMinReturn)).toFixed(2);
   p.ventures.push({principal:CFG.ventureAmount,due:p.ownTurns+3,mult});log(langText("log.ventureMade","벤처 투자 -{v0} · 결과는 3회 내 턴 뒤 공개",{v0:fmt(CFG.ventureAmount)}),`gold`);render();
@@ -1442,8 +1523,8 @@ function makeVenture(){
 function processMaturities(color){
   const p=state.players[color];
   let banker=null;for(let r=0;r<8;r++)for(let c=0;c<8;c++){const unit=state.board[r][c];if(unit?.color===color&&unit.specialId==="banker"&&operationalSpecialAt(r,c,unit))banker=unit;}const bonus=banker?Number(specialAbility(specialDef("banker"),"deposit_interest_bonus")?.params?.multiplier)||1.2:1;
-  p.deposits=p.deposits.filter(d=>{if(d.due<=p.ownTurns){const ret=Math.round(d.principal*(CFG.depositReturn*bonus));p.money+=ret;log(langText("log.depositMatured","{v0} 적금 만기 +{v1}",{v0:sideName(color),v1:fmt(ret)}),"good");return false;}return true;});
-  p.ventures=p.ventures.filter(v=>{if(v.due<=p.ownTurns){const ret=Math.round(v.principal*v.mult);p.money+=ret;log(langText("log.ventureMatured","{v0} 벤처 회수 {v1} ({v2}×)",{v0:sideName(color),v1:fmt(ret),v2:v.mult}),ret>=v.principal?"good":"bad");return false;}return true;});
+  const paid=window.EconomyRules.mature(p,CFG.depositReturn,bonus,!economyFeature("automation")||window.EconomyRules.player(p).automation.maturity);
+  if(paid)log(window.EconomyUI.t("payout")+" +"+fmt(paid),"good");
 }
 function escortKingAuraPieces(color){
   const king=findKing(color);if(!king)return;
@@ -1518,7 +1599,7 @@ function buyInsurance(){
 }
 
 function tradeStock(isBuy){
-  if(!canEconomy())return; const key=document.getElementById("stockSelect").value; const qty=Math.max(1,Math.min(99,Number(document.getElementById("stockQty").value)||1));
+  if(!economyFeature("stocks")||!canEconomy())return; const key=document.getElementById("stockSelect").value; const qty=Math.max(1,Math.min(99,Number(document.getElementById("stockQty").value)||1));
   const p=current(), stock=STOCKS[key], total=Math.round(stock.price*qty);
   const name=companyName(key,stock.name);
   if(p.ap<1)return log(langText("log.stockTradeAP","주식 거래에는 1 AP가 필요해."),"bad");
@@ -1526,6 +1607,7 @@ function tradeStock(isBuy){
   render();
 }
 function moveMarket(){
+  if(!economyFeature("stocks"))return;
   for(const s of Object.values(STOCKS)){s.last=s.price;const drift=(Math.random()-0.5)*0.05;s.price=Math.max(10,+((s.price*(1+drift)).toFixed(2)));}
   if(Math.random()<0.72){
     const news=selectNews();
@@ -1579,9 +1661,14 @@ function endTurn(timedOut=false){
   const mover=state.turn, next=enemyColor(mover);
   stopTurnTimer();
   state.turn=next;state.turnNo++;
+  const auctionResults=window.EconomyRules.settleAuctions(state);
+  if(auctionResults.length)log(window.EconomyUI.t("settled"),"gold");
   const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;playSound("select");
   p.money+=p.salary;const tax=countTax(state.turn);p.money-=tax;
-  if(Number(p.creditDebt||0)>0){const terms=creditTerms(state.turn),interest=Number(terms.interestPerTurn)||0.08,fee=Math.ceil(p.creditDebt*interest);p.creditDebt+=fee;const repayment=Math.min(p.creditDebt,Math.max(0,Math.floor(p.salary*0.2)),Math.max(0,p.money));p.creditDebt-=repayment;p.money-=repayment;log(langText("log.creditSettlement","신용 잔액 이자 +{v0} · 자동 상환 -{v1} · 부채 {v2}",{v0:fmt(fee),v1:fmt(repayment),v2:fmt(p.creditDebt)}),fee?"bad":"");}
+  const creditSettlement=window.EconomyRules.creditTurn(p,Number(creditTerms(state.turn).interestPerTurn) || .08,economyFeature("automation"));
+  if(creditSettlement.fee||creditSettlement.paid)log(langText("log.creditSettlement","신용 잔액 이자 +{v0} · 자동 상환 -{v1} · 부채 {v2}",{
+    v0:fmt(creditSettlement.fee),v1:fmt(creditSettlement.paid),v2:fmt((p.creditDebt||0)+p.pendingInterest)
+  }),creditSettlement.fee?"bad":"");
   if(p.money<0){
     for(const row of state.board)for(const unit of row)if(unit?.color===state.turn&&unit.specialId){
       const ability=specialAbility(specialDef(unit.specialId),"defect_on_unpaid_tax"),effect=ability&&runAbility(ability.id,{state,piece:unit,owner:p,params:ability.params||{},event:"tax"});
@@ -1602,6 +1689,7 @@ function resignGame(){
 }
 function finishGame(winner,reason,reasonKey=null,reasonValues={}){
   stopTurnTimer();
+  if(state.auctions.length){window.EconomyRules.closeAuctions(state);log(window.EconomyUI.t("closed"));}
   state.gameOver=true;state.gameResult={winner,reason,reasonKey,reasonValues};showGameResult();render();
 }
 function showGameResult(){
@@ -1978,8 +2066,8 @@ function render(){
   document.getElementById("whiteTax").textContent=fmt(countTax("w"));document.getElementById("blackTax").textContent=fmt(countTax("b"));
   document.getElementById("whitePieceScore").textContent=langText("game.score","{score}점",{score:countPieceScore("w")});
   document.getElementById("blackPieceScore").textContent=langText("game.score","{score}점",{score:countPieceScore("b")});
-  document.getElementById("whiteDebt").textContent=fmt(state.players.w.creditDebt||0);
-  document.getElementById("blackDebt").textContent=fmt(state.players.b.creditDebt||0);
+  document.getElementById("whiteDebt").textContent=fmt((state.players.w.creditDebt||0)+(state.players.w.pendingInterest||0));
+  document.getElementById("blackDebt").textContent=fmt((state.players.b.creditDebt||0)+(state.players.b.pendingInterest||0));
   document.getElementById("whiteCard").classList.toggle("active",state.turn==="w");document.getElementById("blackCard").classList.toggle("active",state.turn==="b");
   const side=state.turn==="w"?langText("game.white","백"):langText("game.black","흑");
   document.getElementById("turnLabel").textContent=langText("game.turn","{side}의 턴",{side})+(activeInCheck()?` - ${langText("game.check","체크!")}`:"");
@@ -2002,6 +2090,7 @@ function render(){
   const orbitalReason=orbitalReady.reason;
   if(orbitalBtn){orbitalBtn.disabled=!orbitalReady.ok||state.mode==="orbital-targeting"||state.gameOver;orbitalBtn.title=orbitalReady.ok?langText("orbital.connecting","궤도 플랫폼 접속"):langText("orbital.unavailable","궤도 빔 사용 불가: {reason}",{reason:orbitalReason});}
   if(orbitalStatus)orbitalStatus.textContent=state.mode==="orbital-targeting"?langText("orbital.targeting","조준 중 · 클릭 발사 / ESC·우클릭 취소"):orbitalReady.ok?langText("orbital.ready","궤도 플랫폼 접속 가능"):orbitalReason;
+  window.EconomyUI.render();
   renderMaturities();renderStocks();renderAnnotations();
   document.getElementById("endTurnBtn").disabled=state.gameOver;
   if(multiplayerRole()==="host")window.multiplayer.sendState(serializeGameState());
