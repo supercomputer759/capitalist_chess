@@ -12,6 +12,7 @@
 <body>
   <div class="lobby-screen" id="lobbyScreen">
     <div class="lobby-card">
+      <div class="lobby-content">
       <div class="lobby-kicker">CAPITALIST CHESS</div>
       <h1 data-i18n="lobby.title">게임 로비</h1>
       <p class="lobby-subtitle" data-i18n="game.lobbySubtitle">게임 모드와 규칙을 정한 뒤 게임을 시작해.</p>
@@ -48,8 +49,11 @@
           <div class="lobby-room-actions"><button class="primary" id="lobbyCreateRoomBtn" data-i18n="button.createRoom" type="button">방 만들기</button><input id="lobbyRoomCodeInput" data-i18n-placeholder="placeholder.roomCode" maxlength="6" placeholder="방 코드" autocomplete="off"><button class="ghost" id="lobbyJoinRoomBtn" data-i18n="button.joinRoom" type="button">방 입장</button><button class="ghost" id="lobbyWatchRoomBtn" data-i18n="button.watchRoom" type="button">관전</button></div>
           <div class="lobby-room-status" id="lobbyRoomStatus">방을 만들거나 코드를 입력해 입장해.</div>
         </div>
-        <button class="primary lobby-start-btn" id="lobbyStartBtn" type="button"><span data-i18n="lobby.startSingle">싱글플레이 시작</span></button>
       </section>
+      </div>
+      <div class="lobby-footer">
+        <button class="primary lobby-start-btn" id="lobbyStartBtn" type="button"><span data-i18n="lobby.startSingle">싱글플레이 시작</span></button>
+      </div>
     </div>
   </div>
   <div class="app-shell">

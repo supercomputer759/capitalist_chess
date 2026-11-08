@@ -406,4 +406,45 @@ footer{display:block}
 .piece-info-title>.special-piece-chess{width:50px;height:50px;flex:0 0 50px}
 .piece-info-title>.special-piece-chess em{right:-3px;bottom:-2px}
 @media(max-width:720px){.lobby-economy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* 로비 설정만 스크롤하고 시작 버튼은 카드 하단에 유지한다. */
+.lobby-screen {
+  box-sizing: border-box;
+  padding: 16px;
+  overflow-y: auto;
+}
+.lobby-card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+}
+.lobby-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 28px 34px 18px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+.lobby-footer {
+  flex: 0 0 auto;
+  padding: 14px 34px 22px;
+  border-top: 1px solid var(--line);
+  background: #fbfaf6;
+}
+.lobby-footer .lobby-start-btn { margin-top: 0; }
+@media(max-width:560px) {
+  .lobby-screen { padding: 8px; }
+  .lobby-card {
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .lobby-content { padding: 18px 16px 14px; }
+  .lobby-footer { padding: 12px 16px 16px; }
+}
 .lobby-language-picker{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--muted);font-size:12px}.lobby-language-picker select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
