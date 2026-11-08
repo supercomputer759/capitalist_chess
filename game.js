@@ -134,6 +134,7 @@ const state = {
   mode:null,
   pendingPiece:null,
   pendingSpecialId:null,
+  pendingWarehouseId:null,
   legalTargets:[],
   kingDangerTargets:[],
   visits:{},
@@ -359,7 +360,7 @@ function handleEconomyExpansion(color,action){
     }
   }
   if(ok){
-    if(["list","deploy"].includes(action.op)){state.engineRevision++;state.selected=null;state.legalTargets=[];state.mode=null;}
+    if(["list","deploy"].includes(action.op)){state.engineRevision++;state.selected=null;state.legalTargets=[];state.mode=null;state.pendingWarehouseId=null;}
     if(action.op!=="automation")log(UI.t("done"),"good");
   }else log(UI.t("failed"),"bad");
   render();
@@ -612,7 +613,7 @@ async function init() {
   bindControls();
   bindAudioControls();
   window.EconomyUI.init({state,role:multiplayerRole,action:handleEconomyExpansion,
-    publish:publishEconomyLobby,log,pieceName,sideName,money:fmt,tax:countTax,bankruptcy:CFG.bankruptcy});
+    publish:publishEconomyLobby,render,log,pieceName,sideName,money:fmt,tax:countTax,bankruptcy:CFG.bankruptcy});
   document.querySelectorAll(".lobby-settings input,.lobby-rules input,.lobby-economy-settings input").forEach(input=>input.addEventListener("change",publishEconomyLobby));
   if(window.multiplayer){window.multiplayer.onAction=action=>window.handleMultiplayerAction(action);window.multiplayer.onState=snapshot=>applyGameState(snapshot);window.multiplayer.bindUI();}
   addNews({id:"opening",companyId:"market",company:"시장",text:"자본주의 체스 거래소가 개장했다. 모두의 통장이 무사하길."});
@@ -1077,7 +1078,7 @@ function clickSquare(r,c){
   renderTileInfo(key);
 }
 
-function clearMode(){ state.mode=null;state.pendingPiece=null;state.pendingSpecialId=null;state.pendingAbilityId=null;state.abilitySource=null;state.abilityPassenger=null;state.legalTargets=[];state.selected=null;render(); }
+function clearMode(){ state.mode=null;state.pendingWarehouseId=null;state.pendingPiece=null;state.pendingSpecialId=null;state.pendingAbilityId=null;state.abilitySource=null;state.abilityPassenger=null;state.legalTargets=[];state.selected=null;render(); }
 
 function getOrbitalStrikeSquares(target,settings=CFG.orbitalStrike){
   const center=typeof target==="string"?fromName(target):target;if(!center)return [];
@@ -2043,7 +2044,7 @@ function render(){
     if(state.selected?.r===r&&state.selected?.c===c)el.classList.add("selected");
     const legal=state.legalTargets.some(x=>x.r===r&&x.c===c);if(legal)el.classList.add(p?"capture":"legal");
     if(state.kingDangerTargets.some(x=>x.r===r&&x.c===c))el.classList.add("king-danger");
-    if((state.mode==="buy"||state.mode==="special-buy")&&homeZone(state.turn,r)&&!p)el.classList.add("buy-target");
+    if(["buy","special-buy","warehouse-deploy"].includes(state.mode)&&homeZone(state.turn,r)&&!p)el.classList.add("buy-target");
     if(state.mode==="teleport"&&!p)el.classList.add("teleport-target");
     if(isKingLike(p) && isKingInCheck(p.color,state.board)) el.classList.add("in-check");
     el.draggable=!!(p && p.color===state.turn && multiplayerOwnsColor(p.color) && !current().moveUsed && !state.mode && (!p.purchaseLocked||p.active));

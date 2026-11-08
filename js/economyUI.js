@@ -117,7 +117,11 @@
     }
     if (op === "bid") return send(op, { id, amount: Number(document.getElementById(`auctionBid-${id}`).value) });
     if (op === "deploy") {
-      host.state.mode = "warehouse-deploy"; host.state.pendingWarehouseId = id; host.log(t("choose")); return;
+      const state=host.state,color=ownColor(),p=R.player(state.players[color]);
+      if(!state.started||state.gameOver||state.turn!==color||host.role()==="spectator"||!R.enabled(state,"auction")||p.ap<1||!p.warehouse.some(item=>item.id===id))return;
+      state.mode="warehouse-deploy";state.pendingWarehouseId=id;
+      state.selected=null;state.legalTargets=[];
+      host.log(t("choose"));host.render();return;
     }
     send(op);
   }

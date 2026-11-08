@@ -167,14 +167,14 @@ function uiVM(storage={}){
   find('financePanel').appendChild(Object.assign(new Element(),{id:'financeContent'}));
   const document={createElement:tag=>new Element(tag),getElementById:find,querySelector:()=>null,
     querySelectorAll:selector=>selector==='[data-economy-custom]'?elements.filter(element=>Object.hasOwn(element.dataset,'economyCustom')):[]};
-  let role=null;const state=game(),published=[],actions=[],logs=[];state.started=false;
+  let role=null,renders=0;const state=game(),published=[],actions=[],logs=[];state.started=false;
   const en=JSON.parse(read('data/en_us.json'));
   const window={EconomyRules:R,GameLanguage:{text:(key,fallback)=>en[key]??fallback},addEventListener(){},multiplayer:{sendAction:action=>actions.push(action)}};
   const sandbox={window,document,localStorage:{getItem:key=>storage[key]??null,setItem:(key,value)=>{storage[key]=value;}},console};
   vm.createContext(sandbox);vm.runInContext(read('js/economyUI.js'),sandbox);
-  const adapter={state,role:()=>role,publish:()=>published.push(JSON.stringify(state.economyRules)),log:message=>logs.push(message),pieceName:piece=>piece.type,sideName:color=>color,money:value=>'$'+value,tax:()=>0,bankruptcy:-900,action:(color,action)=>actions.push({color,...action})};
+  const adapter={state,role:()=>role,publish:()=>published.push(JSON.stringify(state.economyRules)),render:()=>renders++,log:message=>logs.push(message),pieceName:piece=>piece.type,sideName:color=>color,money:value=>'$'+value,tax:()=>0,bankruptcy:-900,action:(color,action)=>actions.push({color,...action})};
   window.EconomyUI.init(adapter);
-  return {window,document,state,find,storage,actions,published,logs,setRole:value=>{role=value;}};
+  return {window,document,state,find,storage,actions,published,logs,get renders(){return renders;},setRole:value=>{role=value;}};
 }
 test('로비 사용자 저장·재로드와 게스트 읽기 전용 표시',()=>{
   const env=uiVM();const preset=env.find('economyPreset');preset.value='custom';preset.events.change();
@@ -217,4 +217,33 @@ test('비활성 기능의 실제 게임 행동을 차단하고 구매·가치에
   state.economyRules={...R.preset('full'),priceMultiplier:1.5};
   assert.equal(sandbox.piecePrice({type:'r'}),1275);
   assert.equal(sandbox.propertyPrice('a1'),210);
+});
+test('창고 배치 클릭은 기존 수 표시를 지우고 즉시 다시 그리며 상대 턴에는 시작하지 않음',()=>{
+  const env=uiVM();env.state.started=true;
+  env.state.players.w.warehouse=[{id:1,piece:{type:'r',color:'w'}}];
+  env.state.selected={r:7,c:0};env.state.legalTargets=[{r:5,c:0}];
+  const event={target:{closest:()=>({dataset:{econOp:'deploy',id:'1'}})}};
+  env.find('auctionPanel').events.click(event);
+  assert.equal(env.state.mode,'warehouse-deploy');assert.equal(env.state.pendingWarehouseId,1);
+  assert.equal(env.state.selected,null);assert.equal(env.state.legalTargets.length,0);assert.equal(env.renders,1);
+  env.setRole('guest');env.state.mode=null;env.find('auctionPanel').events.click(event);
+  assert.equal(env.state.mode,null);assert.equal(env.renders,1);
+});
+test('실제 체스판 렌더링은 창고 배치에도 구매와 같은 빈 홈 칸 표시를 적용',()=>{
+  const {sandbox,state}=gameVM();Object.assign(state,game());state.mode='warehouse-deploy';
+  state.board[7][0]={type:'r',color:'w'};
+  const squares=Array.from({length:64},(_,i)=>{
+    const classes=new Set();return {dataset:{r:String(Math.floor(i/8)),c:String(i%8)},classes,
+      classList:{add:cls=>classes.add(cls),remove:(...names)=>names.forEach(name=>classes.delete(name))}};
+  });
+  sandbox.document.querySelectorAll=()=>squares;
+  const gameSource=read('game.js');const start=gameSource.indexOf('function render(){');
+  const end=gameSource.indexOf('\n  for(const t of ["p","n","b","r","q"])',start);
+  vm.runInContext(gameSource.slice(start,end).replace('function render(){','function paintBoard(){')+'\n}',sandbox);
+  sandbox.paintBoard();
+  assert.equal(squares.filter(square=>square.classes.has('buy-target')).length,15);
+  assert.equal(squares[56].classes.has('buy-target'),false);assert.equal(squares[48].classes.has('buy-target'),true);
+  state.turn='b';sandbox.paintBoard();assert.equal(squares.filter(square=>square.classes.has('buy-target')).length,16);
+  assert.equal(squares[0].classes.has('buy-target'),true);assert.equal(squares[48].classes.has('buy-target'),false);
+  state.mode=null;sandbox.paintBoard();assert.equal(squares.some(square=>square.classes.has('buy-target')),false);
 });
