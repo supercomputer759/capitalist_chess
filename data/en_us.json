@@ -620,5 +620,11 @@
   "log.enPassant": "Pawn captured en passant.",
   "board.kingDanger": "This move may expose or destroy your king.",
   "board.kingDangerHint": "Red squares warn of danger to your king after a move, including pins and lines opened by en passant.",
-  "log.customStarted": "Custom game started. White cash {white} / Black cash {black}."
+  "log.customStarted": "Custom game started. White cash {white} / Black cash {black}.",
+  "log.factoryOccupied": "The factory was occupied by the attacking side.",
+  "log.magnetPulled": "The magnet pulled a nearby piece.",
+  "notice.cavalryOnly": "Only the cavalry that captured a piece can use this bonus move.",
+  "log.fortressEntered": "The king entered the fortress.",
+  "log.fortressSaved": "The fortress protected its garrisoned king once.",
+  "board.fortressShelter": "Fortress garrison · {count} protection remaining"
 }

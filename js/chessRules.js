@@ -51,9 +51,13 @@
     return {capture,enPassant:capture.r!==to.r||capture.c!==to.c,castle};
   }
   function simulate(state,from,to,ranged=false){
-    const board=copy(state.board),piece=board[from.r][from.c],info=moveInfo(state,from,to);
+    const board=copy(state.board),piece=board[from.r][from.c],info=moveInfo(state,from,to),target=board[to.r][to.c];
     board[info.capture.r][info.capture.c]=null;
-    if(!ranged){board[from.r][from.c]=null;board[to.r][to.c]={...piece,moved:true};}
+    if(!ranged){
+      board[from.r][from.c]=piece.shelterFortress||null;board[to.r][to.c]={...piece,moved:true};
+      delete board[to.r][to.c].shelterFortress;
+      if(target?.specialId==="fortress"&&target.color===piece.color)board[to.r][to.c].shelterFortress=target;
+    }
     if(info.castle){board[info.castle.to.r][info.castle.to.c]={...board[info.castle.from.r][info.castle.from.c],moved:true};board[info.castle.from.r][info.castle.from.c]=null;}
     return board;
   }

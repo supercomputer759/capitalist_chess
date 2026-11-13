@@ -620,5 +620,11 @@
   "log.enPassant": "앙파상으로 폰을 포획했습니다.",
   "board.kingDanger": "이동하면 아군 킹이 공격받거나 제거될 수 있습니다.",
   "board.kingDangerHint": "빨간 칸은 이동 후 킹이 위험해지는 위치입니다. 핀·앙파상에 따른 공격선 변화도 표시합니다.",
-  "log.customStarted": "커스텀 게임 시작. 백 초기 자금 {white} / 흑 초기 자금 {black}."
+  "log.customStarted": "커스텀 게임 시작. 백 초기 자금 {white} / 흑 초기 자금 {black}.",
+  "log.factoryOccupied": "공장이 공격한 진영에 점령되었습니다.",
+  "log.magnetPulled": "자석이 주변 기물을 끌어왔습니다.",
+  "notice.cavalryOnly": "추가 이동은 포획한 기병만 사용할 수 있습니다.",
+  "log.fortressEntered": "킹이 요새에 주둔했습니다.",
+  "log.fortressSaved": "요새가 주둔한 킹을 한 번 보호했습니다.",
+  "board.fortressShelter": "요새 주둔 · 보호 {count}회 남음"
 }

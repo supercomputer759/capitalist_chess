@@ -390,7 +390,7 @@ window.handleMultiplayerAction=function(action){
     state.selected=action.selected;return finishTeleport(action.r,action.c);
   }
   if(action.type==="pieceAbility"){
-    if(!multiplayerOwnsSquare(action.source))return;
+    if(!action.source||state.board[action.source.r]?.[action.source.c]?.color!=="b")return;
     return executePieceAbility(action.id,action.source,action.target,action.passenger);
   }
   if(["job","salary","deposit","venture","insurance","promote","buyProperty","sellPiece","stockBuy","stockSell"].includes(action.type)){
@@ -730,6 +730,23 @@ function specialDisabledAt(r,c,p,board=state.board){
   return false;
 }
 function operationalSpecialAt(r,c,p,board=state.board){return Boolean(p?.specialId&&p.active&&!specialDisabledAt(r,c,p,board));}
+function fortressEntryMoves(r,c,p,board){
+  if(!isKingLike(p))return [];
+  const out=[];
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+    const rr=r+dr,cc=c+dc,fortress=board[rr]?.[cc];
+    if((dr||dc)&&fortress?.specialId==="fortress"&&fortress.color===p.color&&operationalSpecialAt(rr,cc,fortress,board))out.push({r:rr,c:cc});
+  }
+  return out;
+}
+function findPiecePosition(piece,board=state.board){
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c]===piece||(piece?.id&&board[r][c]?.id===piece.id))return {r,c};
+  return null;
+}
+function isRangedCapture(piece,target,board=state.board){
+  const position=findPiecePosition(piece,board),victim=board[target.r]?.[target.c];
+  return Boolean(victim&&victim.color!==piece.color&&position&&operationalSpecialAt(position.r,position.c,piece,board)&&specialAbility(specialDef(piece.specialId),"ranged_capture"));
+}
 function isFakeKingDef(def){return Boolean(def?.fakeKing||specialAbility(def,"fake_king_identity"));}
 function isCountsAsKingDef(def){return Boolean(def?.countsAsKing||specialAbility(def,"royal_unit")?.params?.countsAsKing);}
 function fakeKingPenalty(def){const a=specialAbility(def,"fake_king_identity");return Number(def?.captureApPenalty??a?.params?.captureAPPenalty??a?.params?.captureApPenalty??0);}
@@ -776,7 +793,7 @@ function cloneBoard(board=state.board){ return board.map(row=>row.map(p=>p?{...p
 function countTax(color){
   if(!economyFeature("tax"))return 0;
   let n=0;
-  for(const row of state.board) for(const p of row) if(p?.color===color) n+=p.specialId?specialTax(pieceDef(p)):Number(PIECES[p.type]?.tax||0);
+  for(const row of state.board) for(const p of row) if(p?.color===color){n+=p.specialId?specialTax(pieceDef(p)):Number(PIECES[p.type]?.tax||0);if(p.shelterFortress)n+=specialTax(pieceDef(p.shelterFortress));}
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=state.board[r][c];if(p?.color===color&&p.specialId&&operationalSpecialAt(r,c,p)){
     const ability=specialAbility(specialDef(p.specialId),"piece_tax_discount");
     if(ability)n=Math.max(0,Math.round(n*(1-Number(ability.params?.fraction||0))));
@@ -785,7 +802,7 @@ function countTax(color){
 }
 function countPieceScore(color){
   let score=0;
-  for(const row of state.board) for(const p of row) if(p?.color===color) score+=p.specialId?pieceScore(p):PIECE_SCORE[p.type]||0;
+  for(const row of state.board) for(const p of row) if(p?.color===color){score+=p.specialId?pieceScore(p):PIECE_SCORE[p.type]||0;if(p.shelterFortress)score+=pieceScore(p.shelterFortress);}
   return score;
 }
 function spend(player, amount, reason=langText("action.expense","지출")){
@@ -1212,7 +1229,7 @@ function finishSpecialPurchase(r,c){
   if(isCountsAsKingDef(def)&&!isFakeKingDef(def)){
     for(let rr=0;rr<8;rr++)for(let cc=0;cc<8;cc++){
       const existing=state.board[rr][cc];
-      if(existing?.color===state.turn&&(existing.type==="k"||isKingLike(existing)))state.board[rr][cc]=null;
+      if(existing?.color===state.turn&&(existing.type==="k"||isKingLike(existing)))state.board[rr][cc]=existing.shelterFortress||null;
     }
     log(langText("log.kingReplaced","{piece}이(가) 기존 킹을 대체했어.",{piece:specialPieceName(def)}),"gold");
   }
@@ -1236,17 +1253,23 @@ function pseudoMoves(r,c,board=state.board, attackOnly=false){
   const p=board[r][c]; if(!p) return [];
   if(p.purchaseLocked&&!p.active)return [];
   if(p.attackLockedTurns>0&&attackOnly)return [];
-  if(specialDisabledAt(r,c,p,board))return [];
+  const disabled=specialDisabledAt(r,c,p,board);
   if(p.specialId){
     const def=specialDef(p.specialId),ranged=specialAbility(def,"ranged_capture");let movement=movementSpec(p,def);
-    if(ranged&&!p.growMovement&&!p.ventureMovement)movement={type:"ranged_capture",...ranged.params};
-    if(p.specialId==="short_seller"){
+    if(ranged&&!disabled){
+      const context={r,c,board,p,attackOnly,movement};
+      const shots=p.attackLockedTurns>0?[]:window.movementHandlers.ranged_capture({...context,movement:{type:"ranged_capture",...ranged.params}});
+      const steps=attackOnly?[]:(window.movementHandlers[movement.type]?.(context)||[]).filter(target=>!board[target.r][target.c]);
+      return [...steps,...shots];
+    }
+    if(p.specialId==="short_seller"&&!disabled){
       const opponent=state.players[enemyColor(p.color)],basis=Object.values(opponent.stockBasis||{}).reduce((sum,value)=>sum+Number(value||0),0),held=Object.entries(opponent.holdings||{}).reduce((sum,[key,qty])=>sum+Math.max(0,Number(opponent.stockBasis?.[key]||0)-STOCKS[key].price*qty),0),loss=basis?held/basis:0;
       const power=runAbility("power_from_enemy_stock_losses",{state,piece:p,owner:state.players[p.color],params:specialAbility(def,"power_from_enemy_stock_losses")?.params||{},event:"evaluate",lossPct:loss*100})||{rangeBonus:0,captureBonus:0};
       const range=1+Number(power.rangeBonus||0);movement=range>1?{type:"queen",maxDistance:range}:{type:"king",maxDistance:1};p.shortSellerCaptureBonus=Number(power.captureBonus||0);
     }
     const handler=window.movementHandlers?.[movement?.type];
-    return handler?handler({r,c,board,p,attackOnly,movement}):[];
+    const moves=handler?handler({r,c,board,p,attackOnly,movement}):[];
+    return attackOnly?moves:[...moves,...fortressEntryMoves(r,c,p,board)];
   }
   const out=[]; const add=(rr,cc)=>{ if(inBounds(rr,cc)) out.push({r:rr,c:cc}); };
   const slide=(dirs)=>{ for(const [dr,dc] of dirs){ let rr=r+dr,cc=c+dc; while(inBounds(rr,cc)){ if(board[rr][cc]){ if(board[rr][cc].color!==p.color) add(rr,cc); break; } add(rr,cc); rr+=dr;cc+=dc; } } };
@@ -1271,6 +1294,7 @@ function pseudoMoves(r,c,board=state.board, attackOnly=false){
     const ep=window.ChessRules.enPassant(state,r,c,board);if(ep)out.push(ep);
   }
   if(!attackOnly&&p.type==="k")out.push(...window.ChessRules.castles(state,r,c,isSquareAttacked,board));
+  if(!attackOnly)out.push(...fortressEntryMoves(r,c,p,board));
   return out.filter(x=>inBounds(x.r,x.c));
 }
 
@@ -1292,7 +1316,7 @@ function kingDangerTargetsFor(r,c){
   const unit=state.board[r][c];
   if(!unit||unit.color!==state.turn||state.mode)return [];
   return legalMovesFor(r,c).filter(target=>{
-    const ranged=Boolean(unit.specialId&&specialAbility(specialDef(unit.specialId),"ranged_capture"));
+    const ranged=isRangedCapture(unit,target);
     const board=window.ChessRules.simulate(state,{r,c},target,ranged);
     const info=window.ChessRules.moveInfo(state,{r,c},target),victim=state.board[info.capture.r][info.capture.c];
     const explosion=victim?.specialId&&specialAbility(specialDef(victim.specialId),"explode_on_capture");
@@ -1302,16 +1326,28 @@ function kingDangerTargetsFor(r,c){
 }
 function legalMovesFor(r,c){
   const p=state.board[r][c]; if(!p) return [];
-  return pseudoMoves(r,c,state.board,false).filter(target=>!(p.attackLockedTurns>0&&(state.board[target.r][target.c]||target.enPassant)));
+  return pseudoMoves(r,c,state.board,false).filter(target=>!(p.attackLockedTurns>0&&((state.board[target.r][target.c]&&state.board[target.r][target.c].color!==p.color)||target.enPassant)));
 }
 function tryCaptureDefense(captured,captureSquare,beforeBoard,attacker,fromSquare){
+  const shelter=captured?.shelterFortress,charges=Number(shelter?.abilityCharges?.king_shelter??0);
+  if(shelter&&charges>0&&!specialDisabledAt(captureSquare.r,captureSquare.c,shelter,beforeBoard)){
+    state.board=beforeBoard;
+    state.board[captureSquare.r][captureSquare.c]={...captured,shelterFortress:{...shelter,abilityCharges:{...shelter.abilityCharges,king_shelter:charges-1}}};
+    log(langText("log.fortressSaved","요새가 주둔한 킹을 한 번 보호했습니다."),"gold");return true;
+  }
   if(!captured?.specialId)return false;
   const oldPosition=beforeBoard.flatMap((row,r)=>row.map((unit,c)=>unit?.id===captured.id?{r,c}:null)).flat().find(Boolean);if(oldPosition&&specialDisabledAt(oldPosition.r,oldPosition.c,captured,beforeBoard))return false;
   const def=specialDef(captured.specialId);
   for(const ability of specialAbilities(def)){
+    if(!["mirror_first_attack","capture_or_convert","dismount_escape"].includes(ability.id))continue;
+    if(["mirror_first_attack","capture_or_convert"].includes(ability.id)&&!captured.active)continue;
     const result=runAbility(ability.id,{state,piece:captured,owner:state.players[captured.color],captured,params:ability.params||{},event:ability.id==="mirror_first_attack"?"beingCaptured":"capture",captureSquare,beforeBoard});
     if(result?.mirror){state.board=beforeBoard;state.board[captureSquare.r][captureSquare.c]={...state.board[captureSquare.r][captureSquare.c],mirrorUsed:true};log(langText("log.mirror","{v0}이(가) 첫 공격을 반사했어.",{v0:specialPieceName(def)}),`gold`);return true;}
-    if(result?.convert&&attacker&&fromSquare){state.board=beforeBoard;state.board[fromSquare.r][fromSquare.c]=null;state.board[captureSquare.r][captureSquare.c]={...attacker,color:captured.color,moved:true};log(langText("log.defenderConverted","{v0}이(가) 공격 기물을 자기 편으로 전환했어.",{v0:specialPieceName(def)}),`gold`);return true;}
+    if(result?.convert&&attacker&&fromSquare){
+      state.board=beforeBoard;
+      state.board[captureSquare.r][captureSquare.c]={...captured,color:attacker.color,moved:true,active:false,purchaseLocked:true,activationTurn:state.turnNo+1};
+      log(langText("log.factoryOccupied","공장이 공격한 진영에 점령되었습니다."),"gold");return true;
+    }
     if(!result?.escapeSquare)continue;
     state.board=beforeBoard;
     state.board[captureSquare.r][captureSquare.c]=null;
@@ -1323,8 +1359,9 @@ function tryCaptureDefense(captured,captureSquare,beforeBoard,attacker,fromSquar
 }
 function tryNearbyCaptureDefense(captured,captureSquare,beforeBoard){
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    const defender=state.board[r][c];if(!defender||defender.color!==captured.color||!defender.specialId||specialDisabledAt(r,c,defender))continue;
+    const occupant=state.board[r][c],defender=occupant?.shelterFortress||occupant;if(!defender||defender.color!==captured.color||!defender.specialId||!operationalSpecialAt(r,c,defender))continue;
     for(const ability of specialAbilities(specialDef(defender.specialId))){
+      if(!["ally_defense_aura","sacrifice_for_king"].includes(ability.id))continue;
       const result=runAbility(ability.id,{state,piece:defender,captured,owner:state.players[defender.color],params:ability.params||{},event:"capture",captureSquare,beforeBoard});
       if(result?.defense){
         const charges=defender.abilityCharges?{...defender.abilityCharges}:null;
@@ -1342,6 +1379,8 @@ function runCapturedAbilityEffects(captured,captureSquare,attacker,beforeBoard){
   if(!captured?.specialId)return effects;
   const oldPosition=beforeBoard?.flatMap((row,r)=>row.map((unit,c)=>unit?.id===captured.id?{r,c}:null)).flat().find(Boolean);if(oldPosition&&specialDisabledAt(oldPosition.r,oldPosition.c,captured,beforeBoard))return effects;
   for(const ability of specialAbilities(specialDef(captured.specialId))){
+    if(!["explode_on_capture","deposit_loss_on_capture"].includes(ability.id))continue;
+    if(ability.id==="deposit_loss_on_capture"&&!captured.active)continue;
     const event=ability.id==="explode_on_capture"?"beingCaptured":"capture";
     const result=runAbility(ability.id,{state,piece:captured,owner:state.players[captured.color],captured:attacker||captured,params:ability.params||{},event,captureSquare,beforeBoard:null});
     if(result)effects.push(result);
@@ -1350,17 +1389,20 @@ function runCapturedAbilityEffects(captured,captureSquare,attacker,beforeBoard){
 }
 function runCaptureAbilityEffects(moving,captured,captureSquare){
   const effects=[];
-  for(const ability of specialAbilities(specialDef(moving?.specialId))){
-    if(ability.id==="grow_on_capture")continue;
+  const position=findPiecePosition(moving);
+  const enabled=!moving?.specialId||(position&&operationalSpecialAt(position.r,position.c,moving));
+  for(const ability of enabled?specialAbilities(specialDef(moving?.specialId)):[]){
+    if(["grow_on_capture","nearby_capture_bonus"].includes(ability.id))continue;
     const result=runAbility(ability.id,{state,piece:moving,captured,owner:state.players[moving.color],params:ability.params||{},event:"capture",captureSquare});
     if(result)effects.push(result);
   }
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){const broker=state.board[r][c];if(!broker||broker.id===moving?.id||broker.color!==moving?.color||!broker.specialId||!operationalSpecialAt(r,c,broker))continue;for(const ability of specialAbilities(specialDef(broker.specialId))){if(ability.id!=="nearby_capture_bonus")continue;const result=runAbility(ability.id,{state,piece:broker,captured,owner:state.players[broker.color],params:ability.params||{},event:"capture",captureSquare});if(result)effects.push(result);}}
-  if(moving?.specialId==="short_seller"&&moving.shortSellerCaptureBonus)effects.push({captureBonusFraction:moving.shortSellerCaptureBonus});
+  if(enabled&&moving?.specialId==="short_seller"&&moving.shortSellerCaptureBonus)effects.push({captureBonusFraction:moving.shortSellerCaptureBonus});
   return effects;
 }
 function runMoveAbilityEffects(moving,from,to){
   const effects=[];
+  if(moving?.specialId&&!operationalSpecialAt(to.r,to.c,moving))return effects;
   for(const ability of specialAbilities(specialDef(moving?.specialId))){
     const result=runAbility(ability.id,{state,piece:moving,owner:state.players[moving.color],params:ability.params||{},event:"move",from,to});
     if(result)effects.push({...result,params:ability.params||{}});
@@ -1371,36 +1413,46 @@ function applyMoveAbilityEffects(effects,to,moving){
   for(const effect of effects){
     if(!effect.magnet)continue;
     const sourceRadius=Math.max(1,Number(effect.params.sourceRadius)||1),destinationRadius=Math.max(1,Number(effect.params.destinationRadius)||1),candidates=[];
-    for(let r=0;r<8;r++)for(let c=0;c<8;c++){const target=state.board[r][c];if(target&&target.color!==moving.color&&Math.max(Math.abs(r-to.r),Math.abs(c-to.c))<=sourceRadius)candidates.push({r,c});}
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++){const target=state.board[r][c];if(target&&target.id!==moving.id&&Math.max(Math.abs(r-to.r),Math.abs(c-to.c))<=sourceRadius)candidates.push({r,c});}
     if(!candidates.length)continue;
     const target=effect.params.randomTarget?candidates[Math.floor(Math.random()*candidates.length)]:candidates[0];
-    for(let dr=-destinationRadius;dr<=destinationRadius;dr++)for(let dc=-destinationRadius;dc<=destinationRadius;dc++){
-      const r=to.r+dr,c=to.c+dc;if(inBounds(r,c)&&!state.board[r][c]){state.board[r][c]=state.board[target.r][target.c];state.board[target.r][target.c]=null;log(langText("log.magnet","{v0}의 자석 효과가 상대 기물을 끌어왔어.",{v0:pieceName(moving)}) ,"gold");dr=destinationRadius+1;break;}
-    }
+    const destinations=[];
+    for(let dr=-destinationRadius;dr<=destinationRadius;dr++)for(let dc=-destinationRadius;dc<=destinationRadius;dc++){const r=to.r+dr,c=to.c+dc;if(inBounds(r,c)&&!state.board[r][c])destinations.push({r,c});}
+    if(destinations.length){const destination=destinations[Math.floor(Math.random()*destinations.length)];state.board[destination.r][destination.c]={...state.board[target.r][target.c],moved:true};state.board[target.r][target.c]=null;log(langText("log.magnetPulled","자석이 주변 기물을 끌어왔습니다."),"gold");}
   }
 }
 function payMoveIncome(effects,moving){for(const effect of effects)if(effect.moveIncome){current().money+=effect.moveIncome;log(langText("log.moveIncome","{v0} 이동 수익 +{v1}",{v0:pieceName(moving),v1:fmt(effect.moveIncome)}),"good");}}
 function makeMove(fr,fc,tr,tc){
   if(!inBounds(fr,fc)||!inBounds(tr,tc))return;
   const pl=current(); if(pl.moveUsed) return log(langText("notice.oneMove","일반 체스 이동은 턴당 1번이야."),"bad");
-  if(pl.ap<1) return log(langText("notice.noMoveAP","이동할 AP가 없어."),"bad");
   const moving=state.board[fr][fc];
+  if(pl.extraMovePieceId&&pl.extraMovePieceId!==moving?.id)return log(langText("notice.cavalryOnly","추가 이동은 포획한 기병만 사용할 수 있습니다."),"bad");
+  const moveCost=pl.extraMovePieceId===moving?.id?Number(specialAbility(specialDef(moving?.specialId),"bonus_move_on_capture")?.params?.apCost??0):1;
+  if(pl.ap<moveCost)return log(langText("notice.noMoveAP","이동할 AP가 없어."),"bad");
   const moveInfo=window.ChessRules.moveInfo(state,{r:fr,c:fc},{r:tr,c:tc});
   const captured=state.board[moveInfo.capture.r][moveInfo.capture.c],previousEnPassant=state.enPassant;
   if(!moving || moving.color!==state.turn) return;
   if(!legalMovesFor(fr,fc).some(target=>target.r===tr&&target.c===tc))return;
-  const rangedCapture=Boolean(moving.specialId&&specialAbility(specialDef(moving.specialId),"ranged_capture"));
+  const rangedCapture=isRangedCapture(moving,{r:tr,c:tc});
   if(rangedCapture&&(!captured||captured.color===moving.color))return log(langText("notice.sniperEnemy","저격은 사거리 안의 적 기물만 노릴 수 있어."),"bad");
   if(moving.purchaseLocked&&!moving.active)return log(langText("notice.purchaseInactive","구매한 기물은 다음 자기 턴부터 활성화돼."),"bad");
-  if(captured&&moving.attackLockedTurns>0)return log(langText("notice.attackLocked","구매한 기물은 2턴 동안 공격할 수 없어."),"bad");
+  if(captured&&captured.color!==moving.color&&moving.attackLockedTurns>0)return log(langText("notice.attackLocked","구매한 기물은 2턴 동안 공격할 수 없어."),"bad");
   if(moving.specialId&&!moving.active)return log(langText("log.inactivePiece","{v0}은 다음 자기 턴부터 활성화돼.",{v0:pieceName(moving)}),"bad");
+  const enteringFortress=captured?.color===moving.color&&captured.specialId==="fortress";
+  if(enteringFortress){
+    state.board[fr][fc]=moving.shelterFortress||null;
+    state.board[tr][tc]={...moving,moved:true,shelterFortress:captured};
+    pl.ap-=moveCost;pl.moveUsed=true;pl.extraMovePieceId=null;state.enPassant=null;
+    state.selected={r:tr,c:tc};state.legalTargets=[];state.engineRevision++;
+    log(langText("log.fortressEntered","킹이 요새에 주둔했습니다."));render();return;
+  }
   log(`${pieceName(moving,state.turn)} ${sqName(fr,fc)} → ${sqName(tr,tc)}${captured?` × ${pieceName(captured,state.turn)}`:""}`);
   const moveLogEl=log(`${pieceName(moving,state.turn)} ${sqName(fr,fc)} → ${sqName(tr,tc)}${captured?` × ${pieceName(captured,state.turn)}`:""}`);
   playSound(captured?"capture":"move");
   const beforeBoard=cloneBoard();
   state.enPassant=null;
   const uci=sqName(fr,fc)+sqName(tr,tc)+(moving.type==="p" && (tr===0||tr===7)?"q":"");
-  if(rangedCapture)state.board[tr][tc]=null;else{state.board[tr][tc]={...moving,moved:true};state.board[fr][fc]=null;}
+  if(rangedCapture)state.board[tr][tc]=null;else{state.board[tr][tc]={...moving,moved:true};delete state.board[tr][tc].shelterFortress;state.board[fr][fc]=moving.shelterFortress||null;}
   if(moveInfo.enPassant)state.board[moveInfo.capture.r][moveInfo.capture.c]=null;
   if(moveInfo.castle){
     const rook=state.board[moveInfo.castle.from.r][moveInfo.castle.from.c];
@@ -1411,7 +1463,7 @@ function makeMove(fr,fc,tr,tc){
   if(moveInfo.enPassant)log(langText("log.enPassant","앙파상으로 폰을 포획했습니다."));
   const moveEffects=runMoveAbilityEffects(moving,{r:fr,c:fc},{r:tr,c:tc});
   applyMoveAbilityEffects(moveEffects,{r:tr,c:tc},moving);
-  pl.ap--; pl.moveUsed=true;
+  pl.ap-=moveCost; pl.moveUsed=true;pl.extraMovePieceId=null;
   if(isKingInCheck(enemyColor(),state.board))playSound("check");
   const revision=++state.engineRevision,moveId=++state.engineMoveSerial;
   if(captured){
@@ -1449,21 +1501,21 @@ function makeMove(fr,fc,tr,tc){
     }
     const takeover=captureEffects.find(effect=>effect.takeover);
     if(takeover){const key=sqName(tr,tc),premium=Math.round(piecePrice(captured)*takeover.premiumFraction);state.properties[key]=moving.color;pl.money-=premium;log(langText("log.takeoverPremium","{v0} 적대적 인수 · 프리미엄 -{v1}",{v0:key,v1:fmt(premium)}),"gold");}
-    if(captureEffects.some(effect=>effect.extraMove))pl.moveUsed=false;
     let reward=pieceCaptureReward(captured);
     const captureBonus=captureEffects.find(effect=>effect.captureBonusFraction);
     if(captureBonus)reward+=Math.round(reward*captureBonus.captureBonusFraction);
     if(isKingLike(captured)&&state.players[captured.color].insurance){
       state.players[captured.color].insurance=false;
-      state.board[fr][fc]=moving;state.board[tr][tc]=captured;pl.money-=reward;
+      state.board=beforeBoard;
       state.enPassant=previousEnPassant;
       log(langText("log.insuranceSaved","{v0} 킹 포획을 부활 보험이 막았다.",{v0:sideName(captured.color)}),"gold");
       state.selected={r:fr,c:fc};state.legalTargets=[];render();return;
     }
     const survivor=rangedCapture?state.board[fr][fc]:state.board[tr][tc];
-    if(survivor?.id===moving.id){
+    if(survivor?.id===moving.id&&(!moving.specialId||operationalSpecialAt(rangedCapture?fr:tr,rangedCapture?fc:tc,survivor))){
       const growth=specialAbility(specialDef(moving.specialId),"grow_on_capture");
       if(growth)runAbility(growth.id,{state,piece:survivor,params:growth.params||{},event:"capture"});
+      if(captureEffects.some(effect=>effect.extraMove)){pl.moveUsed=false;pl.extraMovePieceId=moving.id;}
     }
     pl.money+=reward;
     const capturedName=pieceName(captured,state.turn);
@@ -1525,7 +1577,7 @@ function buyProperty(){
 function beginPieceAbility(id){
   if(!state.selected||!canEconomy())return;
   const p=state.board[state.selected.r][state.selected.c],def=p?.specialId?specialDef(p.specialId):null;
-  if(!p||p.color!==state.turn||!p.active||!specialAbility(def,id))return log(langText("notice.selectAbilityPiece","능력을 사용할 특수기물을 선택해."),"bad");
+  if(!p||p.color!==state.turn||!operationalSpecialAt(state.selected.r,state.selected.c,p)||!specialAbility(def,id))return log(langText("notice.selectAbilityPiece","능력을 사용할 특수기물을 선택해."),"bad");
   if(id==="paid_friendly_swap"||id==="paid_same_color_warp"||id==="hostile_takeover"){
     state.mode="piece-ability-target";state.pendingAbilityId=id;state.abilitySource={...state.selected};state.abilityPassenger=null;
     log(id==="paid_friendly_swap"?langText("notice.swapSelect","위치를 바꿀 아군 기물을 선택해."):id==="paid_same_color_warp"?langText("notice.warpSelect","같은 색의 빈 칸을 선택해."):langText("notice.takeoverSelect","인수할 인접한 적 기물을 선택해."),"gold");render();return;
@@ -1538,7 +1590,7 @@ function beginPieceAbility(id){
 function executePieceAbility(id,source,target,passenger){
   if(!source||!target||!inBounds(source.r,source.c)||!inBounds(target.r,target.c))return;
   const unit=state.board[source.r][source.c],def=unit?.specialId?specialDef(unit.specialId):null,ability=specialAbility(def,id),p=current();
-  if(!unit||unit.color!==state.turn||!unit.active||!ability||state.gameOver)return log(langText("notice.abilityConditions","능력 사용 조건이 맞지 않아."),"bad");
+  if(!unit||unit.color!==state.turn||!operationalSpecialAt(source.r,source.c,unit)||!ability||state.gameOver)return log(langText("notice.abilityConditions","능력 사용 조건이 맞지 않아."),"bad");
   const from=sqName(source.r,source.c),to=sqName(target.r,target.c),params=ability.params||{},action=runAbility(id,{state,piece:unit,owner:p,params,event:"action"})||{};
   if(id==="paid_same_color_warp"){
     const cost=Number(action.moneyCost??params.moneyCost)||500,ap=Number(action.apCost??params.apCost)||1;
@@ -1572,6 +1624,7 @@ function renderTileInfo(key){
   const ownerName=owner?(owner==="w"?langText("game.white","백"):langText("game.black","흑")):langText("board.unowned","없음");
   document.getElementById("tileInfo").innerHTML=`<b>${key}</b> · ${langText("board.visits","방문 {count}회",{count:visits})} · ${langText("board.value","가치 {amount}",{amount:fmt(propertyPrice(key))})} · ${langText("board.toll","통행료 {amount}",{amount:fmt(propertyToll(key))})}<br>${langText("board.owner","소유자")}: ${ownerName}${ability&&tile.color===state.turn?`<br><button type="button" id="pieceAbilityBtn">${actions[ability.id]}</button>`:""}`;
   document.getElementById("pieceAbilityBtn")?.addEventListener("click",()=>beginPieceAbility(ability.id));
+  if(tile?.shelterFortress)document.getElementById("tileInfo").innerHTML+=`<br>${langText("board.fortressShelter","요새 주둔 · 보호 {count}회 남음",{count:Number(tile.shelterFortress.abilityCharges?.king_shelter??0)})}`;
 }
 
 function doJob(){ if(!economyFeature("labor")||!canEconomy()||!useAP(1,langText("economy.job","알바")))return;current().money+=CFG.jobPay;playSound("click");log(langText("log.job","알바 완료 +{v0} (킹이 알바 뛰는 세계관)",{v0:fmt(CFG.jobPay)}),`good`);render(); }
@@ -1602,7 +1655,7 @@ function escortKingAuraPieces(color){
   const king=findKing(color);if(!king)return;
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     const guard=state.board[r][c],def=guard?.specialId?specialDef(guard.specialId):null,movement=def?.movement;
-    if(!guard||guard.color!==color||!guard.specialId||movement?.type!=="king_aura_teleport")continue;
+    if(!guard||guard.color!==color||!operationalSpecialAt(r,c,guard)||movement?.type!=="king_aura_teleport")continue;
     const radius=Math.max(1,Number(movement.radiusFromKing)||1);
     if(Math.max(Math.abs(r-king.r),Math.abs(c-king.c))<=radius)continue;
     let destination=null;
@@ -1736,7 +1789,7 @@ function endTurn(timedOut=false){
   if(state.enPassant?.color!==next)state.enPassant=null;
   const auctionResults=window.EconomyRules.settleAuctions(state);
   if(auctionResults.length)log(window.EconomyUI.t("settled"),"gold");
-  const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;playSound("select");
+  const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;p.extraMovePieceId=null;playSound("select");
   p.money+=p.salary;const tax=countTax(state.turn);p.money-=tax;
   const creditSettlement=window.EconomyRules.creditTurn(p,Number(creditTerms(state.turn).interestPerTurn) || .08,economyFeature("automation"));
   if(creditSettlement.fee||creditSettlement.paid)log(langText("log.creditSettlement","신용 잔액 이자 +{v0} · 자동 상환 -{v1} · 부채 {v2}",{
@@ -2115,7 +2168,7 @@ function render(){
     const r=Number(el.dataset.r),c=Number(el.dataset.c),p=state.board[r][c],key=sqName(r,c);
     el.classList.remove("selected","legal","capture","buy-target","teleport-target","in-check","king-danger","dragging");
     if(state.selected?.r===r&&state.selected?.c===c)el.classList.add("selected");
-    const legal=state.legalTargets.some(x=>x.r===r&&x.c===c);if(legal)el.classList.add(p?"capture":"legal");
+    const legal=state.legalTargets.some(x=>x.r===r&&x.c===c);if(legal)el.classList.add(p&&p.color!==state.turn?"capture":"legal");
     const kingDanger=state.kingDangerTargets.some(x=>x.r===r&&x.c===c);
     if(kingDanger)el.classList.add("king-danger");
     el.title=kingDanger?langText("board.kingDanger","이동하면 아군 킹이 공격받거나 제거될 수 있습니다."):"";
@@ -2124,7 +2177,7 @@ function render(){
     if(isKingLike(p) && isKingInCheck(p.color,state.board)) el.classList.add("in-check");
     el.draggable=!!(p && p.color===state.turn && multiplayerOwnsColor(p.color) && !current().moveUsed && !state.mode && (!p.purchaseLocked||p.active));
     let html="";
-    if(p) html+=p.specialId?pieceVisual(p):pieceImgTag(p.color+p.type,"piece",`${p.color}${p.type}`);
+    if(p){const visual=p.specialId?pieceVisual(p):pieceImgTag(p.color+p.type,"piece",`${p.color}${p.type}`);html+=p.shelterFortress?`<span class="fortress-garrison">${pieceVisual(p.shelterFortress)}${visual}</span>`:visual;}
     if(state.visits[key])html+=`<span class="visit-badge">${state.visits[key]}</span>`;
     if(state.properties[key])html+=`<span class="owner-mark ${state.properties[key]}"></span>`;
     el.innerHTML=html;

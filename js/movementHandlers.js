@@ -9,7 +9,7 @@
   const slide=(ctx,dirs)=>{
     const out=[]; const {r,c,board,p,attackOnly}=ctx;
     const max=Math.max(1,Number(ctx.movement?.maxDistance)||8);
-    for(const [dr,dc] of dirs){let rr=r,cc=c,steps=0;while(inside(rr+dr,cc+dc)&&steps<max){rr+=dr;cc+=dc;steps++;if(board[rr][cc]){if(!solidObstacle(board[rr][cc])&&(board[rr][cc].color!==p.color||attackOnly))out.push({r:rr,c:cc});break;}out.push({r:rr,c:cc});}}
+    for(const [dr,dc] of dirs){let rr=r,cc=c,steps=0;while(inside(rr+dr,cc+dc)&&steps<max){rr+=dr;cc+=dc;steps++;if(board[rr][cc]){if(solidObstacle(board[rr][cc]))break;if(board[rr][cc].color!==p.color||attackOnly)out.push({r:rr,c:cc});if(!ctx.movement?.phasing)break;}else out.push({r:rr,c:cc});}}
     return out;
   };
   const vectors={king:[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]],knight:[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],bishop:[[-1,-1],[-1,1],[1,-1],[1,1]],rook:[[-1,0],[1,0],[0,-1],[0,1]],queen:[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]};
@@ -28,7 +28,19 @@
       return out;
     },
     compound:ctx=>(ctx.movement.parts||ctx.movement.modes||[]).flatMap(part=>{const type=typeof part==="string"?part:part.type;return movementHandlers[type]?movementHandlers[type]({...ctx,movement:typeof part==="string"?{}:part}):[]}),
-    king_aura_teleport:ctx=>movementHandlers.king(ctx),
+    king_aura_teleport:ctx=>{
+      const out=[],radius=Math.max(1,Number(ctx.movement.radiusFromKing)||1);
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+        const unit=ctx.board[r][c],def=unit?.specialId?window.SpecialPieces?.get(unit.specialId):null;
+        const royal=unit?.type==="k"||def?.abilities?.some(a=>a.id==="royal_unit"&&a.params?.countsAsKing);
+        if(!unit||unit.color!==ctx.p.color||!royal)continue;
+        for(let dr=-radius;dr<=radius;dr++)for(let dc=-radius;dc<=radius;dc++){
+          const rr=r+dr,cc=c+dc;if((dr||dc)&&(rr!==ctx.r||cc!==ctx.c))add(out,rr,cc,ctx.board,ctx.p,ctx.attackOnly);
+        }
+        return out;
+      }
+      return out;
+    },
     progressive:ctx=>movementHandlers.king(ctx),
     random_on_purchase:ctx=>movementHandlers.pawn(ctx),
     dynamic:ctx=>movementHandlers.king(ctx),

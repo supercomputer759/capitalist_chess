@@ -27,7 +27,8 @@
   };
   const inside=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
   const distance=(a,b)=>Math.max(Math.abs(a.r-b.r),Math.abs(a.c-b.c));
-  const locate=(state,piece)=>{for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(state.board[r][c]===piece)return {r,c};return null;};
+  const royal=piece=>piece?.type==="k"||Boolean(piece?.specialId&&(window.SpecialPieces?.get(piece.specialId)?.countsAsKing||window.SpecialPieces?.get(piece.specialId)?.abilities?.some(a=>a.id==="royal_unit"&&a.params?.countsAsKing)));
+  const locate=(state,piece)=>{for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(state.board[r][c]===piece||(piece?.id&&(state.board[r][c]?.id===piece.id||state.board[r][c]?.shelterFortress?.id===piece.id)))return {r,c};return null;};
   Object.assign(abilityHandlers,{
     black_hole_pulse(ctx){
       if(ctx.event!=="turn")return null;
@@ -39,15 +40,15 @@
       return {blackHolePulse:true,removed};
     },
     deposit_interest_bonus(ctx){return ctx.event==="deposit"?{multiplier:Number(ctx.params.multiplier)||1}:null;},
-    ally_defense_aura(ctx){if(ctx.event==="capture"&&ctx.captureSquare&&ctx.piece?.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true};}return null;},
+    ally_defense_aura(ctx){if(ctx.event==="capture"&&ctx.captureSquare&&ctx.captured?.color===ctx.piece?.color&&ctx.captured!==ctx.piece&&!royal(ctx.captured)){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true};}return null;},
     bonus_move_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color)return {extraMove:true};return null;},
     capture_or_convert(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color&&Math.random()<=Number(ctx.params.convertChance||0))return {convert:true};return null;},
     cash_steal_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color)return {stealFraction:Number(ctx.params.fractionOfVictimValue)||0,maxSteal:Number(ctx.params.maxSteal)||0};return null;},
     explode_on_capture(ctx){if(ctx.event==="beingCaptured"&&ctx.piece?.color===ctx.owner?.color)return {explode:true};return null;},
     fortress_capture_guard(ctx){if(ctx.event==="capture"&&ctx.captureSquare&&ctx.piece?.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true};}return null;},
     ranged_capture(){return null;},
-    sacrifice_for_king(ctx){if(ctx.event==="capture"&&ctx.captured&&ctx.captured.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true,sacrifice:true};}return null;},
-    produce_pawn(ctx){if(ctx.event!=="turn")return null;const pos=locate(ctx.state,ctx.piece),interval=Math.max(1,Number(ctx.params.intervalTurns)||1);if(!pos||ctx.state.turnNo%interval)return null;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const r=pos.r+dr,c=pos.c+dc;if(inside(r,c)&&!ctx.state.board[r][c]){ctx.state.board[r][c]={type:"p",color:ctx.piece.color,moved:false,id:crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)};return null;}}return null;},
+    sacrifice_for_king(ctx){const captured=ctx.captured,def=captured?.specialId?window.SpecialPieces?.get(captured.specialId):null,king=captured?.type==="k"||def?.countsAsKing||def?.abilities?.some(a=>a.id==="royal_unit"&&a.params?.countsAsKing);if(ctx.event==="capture"&&king&&captured.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true,sacrifice:true};}return null;},
+    produce_pawn(ctx){if(ctx.event!=="turn")return null;const pos=locate(ctx.state,ctx.piece),interval=Math.max(1,Number(ctx.params.intervalTurns)||1);if(!pos||!ctx.piece.specialTurnCount||ctx.piece.specialTurnCount%interval||ctx.piece.lastProductionTurn===ctx.piece.specialTurnCount)return null;ctx.piece.lastProductionTurn=ctx.piece.specialTurnCount;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const r=pos.r+dr,c=pos.c+dc;if(inside(r,c)&&!ctx.state.board[r][c]){ctx.state.board[r][c]={type:"p",color:ctx.piece.color,moved:false,id:crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)};return null;}}return null;},
     venture_roll(ctx){
       if(!["purchase","turn"].includes(ctx.event)||!ctx.piece||ctx.piece.ventureMovement)return null;
       const outcomes=(ctx.params.outcomes||[]).filter(item=>Number(item.weight)>0);
@@ -67,7 +68,7 @@
     ,deposit_loss_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece?.color===ctx.owner?.color)return {depositLossFraction:Number(ctx.params.fraction)||0};return null;}
     ,piece_tax_discount(ctx){return ctx.event==="tax"?{discount:Number(ctx.params.fraction)||0}:null;}
     ,nearby_capture_bonus(ctx){if(ctx.event!=="capture"||!ctx.captureSquare)return null;const pos=locate(ctx.state,ctx.piece);return pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1)?{captureBonusFraction:Number(ctx.params.bonusFraction)||0}:null;}
-    ,capture_chance(ctx){if(ctx.event==="capture"&&Math.random()<=Number(ctx.params.chance||0))return {defense:true};return null;}
+    ,capture_chance(ctx){if(ctx.event==="capture"&&Math.random()>=Number(ctx.params.chance??0))return {defense:true};return null;}
     ,nearby_toll_bonus(ctx){if(ctx.event!=="toll"||!ctx.captureSquare)return null;const pos=locate(ctx.state,ctx.piece);return pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1)?{tollMultiplier:Number(ctx.params.multiplier)||1}:null;}
     ,king_shelter(ctx){if(ctx.event!=="capture"||!ctx.captureSquare||!ctx.captured)return null;const king=ctx.captured.type==="k"||(ctx.captured.specialId&&window.SpecialPieces?.get(ctx.captured.specialId)?.abilities?.some(a=>a.id==="royal_unit"&&a.params?.countsAsKing));if(!king)return null;const charges=Number(ctx.piece.abilityCharges?.king_shelter??ctx.params.charges??0),pos=locate(ctx.state,ctx.piece);if(charges<=0||!pos||distance(pos,ctx.captureSquare)>Number(ctx.params.radius||1))return null;ctx.piece.abilityCharges={...(ctx.piece.abilityCharges||{}),king_shelter:charges-1};return {defense:true,sacrifice:Boolean(ctx.params.sacrifice)};}
     ,grow_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece){ctx.piece.growthCaptures=Number(ctx.piece.growthCaptures||0)+1;const stages=ctx.params.stages||[];const current=stages.filter(stage=>Number(stage.captures)<=ctx.piece.growthCaptures).sort((a,b)=>Number(a.captures)-Number(b.captures)).at(-1);if(current)ctx.piece.growMovement=typeof current.movement==="string"?{type:current.movement}:current.movement; }return null;}

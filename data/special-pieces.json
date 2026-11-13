@@ -909,6 +909,12 @@
             "radius": 1,
             "premiumFraction": 0.35
           }
+        },
+        {
+          "id": "royal_unit",
+          "params": {
+            "countsAsKing": true
+          }
         }
       ],
       "description": "일반 킹을 업그레이드하는 신화 기물. 주변 적 기물을 해당 가치+프리미엄을 내고 아군으로 인수할 수 있다."
