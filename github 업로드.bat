@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
@@ -112,8 +112,24 @@ goto SUCCESS
 :COMMIT
 echo.
 echo [3/4] 커밋
-git commit -m "업데이트"
-if errorlevel 1 goto ERROR
+
+REM 커밋 메시지를 실행할 때 직접 입력할 수 있도록 함
+REM 입력 중 느낌표(!)가 사라지지 않도록 일시적으로 delayed expansion 비활성화
+setlocal DisableDelayedExpansion
+set "COMMIT_MSG="
+set /p "COMMIT_MSG=커밋 메시지를 입력하세요 (Enter = 업데이트): "
+
+if not defined COMMIT_MSG set "COMMIT_MSG=업데이트"
+
+echo.
+echo [커밋 메시지] %COMMIT_MSG%
+git commit -m "%COMMIT_MSG%"
+
+if errorlevel 1 (
+    endlocal
+    goto ERROR
+)
+endlocal
 
 echo.
 echo [4/4] GitHub Push
