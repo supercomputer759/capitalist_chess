@@ -398,13 +398,13 @@ footer{display:block}
 .lobby-economy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px}
 .lobby-economy-grid label{display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)}
 .lobby-economy-grid input{width:100%;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px;background:#fffdf8;color:var(--text)}
-.special-piece-icon.special-piece-chess{width:82%;height:82%;padding:0;border:0;border-radius:0;background:transparent;overflow:visible}
+.special-piece-icon.special-piece-chess{display:block;width:88%;height:94%;padding:0;border:0;border-radius:0;background:transparent;overflow:visible}
 .special-piece-chess .special-chess-image{width:100%;height:100%;object-fit:contain}
-.special-piece-chess em{right:-5px;bottom:-3px;width:17px;height:17px;display:grid;place-items:center;font:800 9px/1 system-ui,sans-serif;border:1px solid rgba(80,70,45,.55);box-shadow:0 1px 3px rgba(0,0,0,.22)}
 .special-shop-icon{width:40px;height:40px;flex:0 0 40px}
 .special-shop-icon .special-chess-image{width:100%;height:100%;filter:drop-shadow(0 2px 1px rgba(0,0,0,.18))}
-.piece-info-title>.special-piece-chess{width:50px;height:50px;flex:0 0 50px}
-.piece-info-title>.special-piece-chess em{right:-3px;bottom:-2px}
+.special-shop-icon .special-piece-chess{width:100%;height:100%}
+.piece-info-title>span{display:grid;place-items:center;width:64px;height:72px;flex:0 0 64px}
+.piece-info-title .special-piece-chess,.mini-cell>.special-piece-chess{width:100%;height:100%}
 @media(max-width:720px){.lobby-economy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* 로비 설정만 스크롤하고 시작 버튼은 카드 하단에 유지한다. */

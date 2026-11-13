@@ -671,10 +671,15 @@ function specialChessType(def){
   return visualTypes[types[0]]||"n";
 }
 function specialChessGlyph(def){return ({k:"\u2654",q:"\u2655",r:"\u2656",b:"\u2657",n:"\u2658",p:"\u2659"})[specialChessType(def)];}
-function specialChessVisual(def,color="w",label=""){
-  const name=specialPieceName(def),type=specialChessType(def),mark=String(name||def?.id||"?").trim().slice(0,1);
-  const title=label||name||"Special piece";
-  return '<span class="special-piece-icon special-piece-chess owner-'+color+'" title="'+title+'">'+pieceImgTag(color+type,"piece special-chess-image",color+type)+'<em>'+mark+'</em></span>';
+function specialChessVisual(def,color="w",label="",conceal=false){
+  const escape=value=>String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
+  const side=color==="b"?"b":"w",type=conceal?"k":def?.standardType||specialChessType(def);
+  const title=conceal?stockPieceName("k"):label||specialPieceName(def)||langText("piece.special","특수기물");
+  const asset=conceal?null:window.SpecialPieceArt?.path(def?.id,side);
+  const image=asset
+    ?'<img class="piece special-chess-image" src="'+asset+'" data-fallback="'+IMG_FALLBACK[side+type]+'" alt="'+escape(title)+'">'
+    :pieceImgTag(side+type,"piece special-chess-image",escape(title));
+  return '<span class="special-piece-icon special-piece-chess owner-'+side+'" title="'+escape(title)+'">'+image+'</span>';
 }
 window.specialChessVisual=specialChessVisual;
 window.specialChessGlyph=specialChessGlyph;
@@ -716,14 +721,17 @@ function pieceCaptureReward(p){return economyPrice(pieceDef(p)?.captureReward??p
 function pieceScore(p){return p.specialId?(p.specialId==="venture_knight"&&Number.isFinite(Number(p.ventureScore))?Number(p.ventureScore):specialScore(pieceDef(p))):Number(pieceDef(p)?.score||0);}
 function isKingLike(p){const def=p?.specialId?specialDef(p.specialId):null;return p?.type==="k"||Boolean(p?.specialId&&!isFakeKingDef(def)&&isCountsAsKingDef(def));}
 function legacyPieceVisual(p){return pieceVisual(p);}
+function pieceViewerColor(){
+  const role=multiplayerRole();
+  return role==="guest"?"b":role==="host"?"w":role==="spectator"?null:state.turn;
+}
 function pieceVisual(p){
   const def=pieceDef(p);
   const owner=p.color==="w"?langText("color.white","\ubc31"):langText("color.black","\ud751");
-  if(p.specialId&&!isFakeKingDef(def)&&!isCountsAsKingDef(def))return specialChessVisual(def,p.color,pieceName(p)+" | "+owner);
-  const ownerView=p.specialId&&isFakeKingDef(def)&&p.color===state.turn;
-  const alt=ownerView?langText("piece.fakeKing","\uac00\uc9dc \ud0b9"):p.color+"k";
-  const image=pieceImgTag(p.color+"k","piece",alt);
-  return '<span class="special-piece-icon owner-'+p.color+'" title="'+pieceName(p)+' | '+owner+'">'+image+'<em>'+(p.color==="w"?"W":"B")+'</em></span>';
+  const viewer=pieceViewerColor();
+  const conceal=isFakeKingDef(def)&&p.color!==viewer;
+  if(conceal)return pieceImgTag(p.color+"k","piece",p.color+"k");
+  return specialChessVisual(def,p.color,pieceName(p,viewer)+" | "+owner,conceal);
 }
 function current(){ return state.players[state.turn]; }
 function enemyColor(c=state.turn){ return c === "w" ? "b" : "w"; }
@@ -1015,7 +1023,7 @@ function normalPieceInfo(p){
 function showBoardPieceInfo(r,c){
   const p=state.board[r][c];if(!p)return;
   const def=p.specialId?specialDef(p.specialId):normalPieceInfo(p);
-  const viewerOwns=p.color===state.turn;
+  const viewerOwns=p.color===pieceViewerColor();
   const hiddenFakeId=p.specialId&&isFakeKingDef(def)&&!viewerOwns;
   showPieceInfo(def,p.specialId?state.specialStock[p.specialId]||0:null,viewerOwns,p.id,hiddenFakeId?null:(p.specialId||p.type),p.color);
 }

@@ -12,13 +12,12 @@
     const descriptionKey=def.id?`piece.${def.id}.description`:"pieceInfo.generalDescription";
     const visibleName=fake&&!viewerOwns?text("piece.standard.k","킹"):text(nameKey,def.name||"기물");
     const visibleDescription=fake&&!viewerOwns?text("pieceInfo.fakeKingDescription","체스판에서 킹으로 보이는 기물."):text(descriptionKey,def.description||"일반 체스 기물");
-    const icon=window.specialChessVisual?window.specialChessVisual(def,ownerColor||"w",visibleName):(def.icon||def.emoji||"\u265f");
-    const chessGlyph=window.specialChessGlyph?window.specialChessGlyph(def):"\u2659";
+    const icon=window.specialChessVisual?window.specialChessVisual(def,ownerColor||"w",visibleName,fake&&!viewerOwns):(def.icon||def.emoji||"\u265f");
     const score=def.score??def.pieceScore??0;
     const tax=def.maintenanceTax??def.tax??0;
     const cells=movementCells(def); const marks=new Set(cells.map(([r,c])=>`${r+2},${c+2}`));
     let mini=`<div class="movement-mini" aria-label="${text("pieceInfo.preview","행마 미리보기")}">`;
-    for(let r=0;r<5;r++)for(let c=0;c<5;c++)mini+=`<span class=\"mini-cell ${r===2&&c===2?"center":""} ${marks.has(`${r},${c}`)?"move":""}\">${r===2&&c===2?chessGlyph:""}</span>`;
+    for(let r=0;r<5;r++)for(let c=0;c<5;c++)mini+=`<span class=\"mini-cell ${r===2&&c===2?"center":""} ${marks.has(`${r},${c}`)?"move":""}\">${r===2&&c===2?icon:""}</span>`;
     mini+="</div>";
     const hiddenFake=!viewerOwns&&fake;
     const abilities=hiddenFake?`<li>${text("pieceInfo.hiddenAbility","공개되지 않은 능력")}</li>`:(def.abilities||[]).map(a=>`<li>${text(`ability.${a.id}`,a.id.replaceAll("_"," "))}</li>`).join("")||`<li>${text("pieceInfo.noAbilities","없음")}</li>`;
@@ -33,6 +32,7 @@
       dataRow.innerHTML=`${text("pieceInfo.dataId","데이터 ID")} <b class="piece-id">${dataId}</b>`;
       body.querySelector(".piece-info-grid")?.prepend(dataRow);
     }
+    window.attachImageFallbacks?.(body);
     modal.classList.remove("hidden");
   }
   window.showPieceInfo=showPieceInfo;
