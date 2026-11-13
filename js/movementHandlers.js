@@ -44,7 +44,7 @@
   };
   function movementPreviewCells(movement={}){
     if(movement.preview?.cells)return movement.preview.cells;
-    const types=movement.type==="compound"?(movement.modes||movement.parts||[]):[movement.type];
+    const types=movement.type==="knight_bishop"?["knight","bishop"]:movement.type==="compound"?(movement.modes||movement.parts||[]):[movement.type];
     const cells=[];const seen=new Set();
     for(const item of types){const type=typeof item==="string"?item:item.type;const vectorsFor=vectors[type]||[];for(const cell of vectorsFor){const key=cell.join(",");if(!seen.has(key)){seen.add(key);cells.push(cell);}}}
     return cells;

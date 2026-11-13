@@ -140,6 +140,7 @@ const state = {
   visits:{},
   properties:{},
   lastMove:null,
+  enPassant:null,standardSetup:false,setupMode:"kings",customSetup:null,
   gameOver:false,
   gameResult:null,
   engineReady:false,
@@ -243,6 +244,7 @@ function serializeGameState(){
     visits:state.visits,
     properties:state.properties,
     lastMove:state.lastMove,
+    enPassant:state.enPassant,standardSetup:state.standardSetup,setupMode:state.setupMode,customSetup:state.customSetup,
     gameOver:state.gameOver,
     gameResult:state.gameResult,
     specialStock:state.specialStock,
@@ -289,6 +291,9 @@ function applyGameState(snapshot){
   if(!snapshot||snapshot.schemaVersion!==1)return false;
   const previousPriceMultiplier=state.economyRules.priceMultiplier;
   if(snapshot.economySettings)applyEconomySettings(snapshot.economySettings);
+  state.enPassant=snapshot.enPassant||null;state.standardSetup=Boolean(snapshot.standardSetup);
+  state.setupMode=snapshot.setupMode||"kings";state.customSetup=snapshot.customSetup||null;
+  if(!snapshot.started&&document.getElementById("lobbyBoardSetup"))document.getElementById("lobbyBoardSetup").value=state.setupMode;
   state.economyRules=window.EconomyRules.normalize(snapshot.economyRules);
   state.auctions=snapshot.auctions||[];state.auctionSerial=Number(snapshot.auctionSerial)||0;
   state.lobbySettings=snapshot.lobbySettings||{};
@@ -335,6 +340,8 @@ window.economyPrice=economyPrice;
 function publishEconomyLobby(){
   if(state.started||["guest","spectator"].includes(multiplayerRole()))return;
   state.economyRules=window.EconomyUI.lobbyRules();state.lobbySettings={};
+  state.setupMode=document.getElementById("lobbyBoardSetup")?.value||"kings";
+  state.customSetup||=window.SetupEditor?.saved()||null;
   document.querySelectorAll(".lobby-settings input,.lobby-economy-settings input,.lobby-rules input:not([readonly]):not([disabled])").forEach(input=>{
     state.lobbySettings[input.id]=input.type==="checkbox"?input.checked:input.value;
   });
@@ -519,11 +526,22 @@ function setupLobby(){
     start.disabled=isMulti&&!role;
     document.querySelectorAll(".lobby-settings input:not([readonly]),.lobby-rules input:not(#lobbyKingCapture):not([readonly]),.lobby-economy-settings input").forEach(input=>input.disabled=isMulti&&["guest","spectator"].includes(role));
     window.EconomyUI.syncLobby();
+    const readonly=state.started||["guest","spectator"].includes(role);
+    document.getElementById("lobbyBoardSetup").disabled=readonly;
+    document.getElementById("editCustomSetup").disabled=readonly;
   };
   const apply=()=>{
     const hostRole=multiplayerRole();
     if(mode==="multi"&&hostRole==="guest")return;
     state.economyRules=window.EconomyUI.lobbyRules();
+    state.setupMode=document.getElementById("lobbyBoardSetup").value;
+    if(state.setupMode==="custom"){
+      state.customSetup=window.SetupEditor.normalize(state.customSetup||window.SetupEditor.saved(),Object.fromEntries(SpecialPieces.list().map(def=>[def.id,def])));
+      if(!state.customSetup){window.SetupEditor.open();return false;}
+    }
+    state.standardSetup=state.setupMode==="standard"||(state.setupMode==="custom"&&state.customSetup.castling);
+    state.board=state.setupMode==="custom"?window.SetupEditor.initialBoard(state.customSetup,piece,specialPiece):window.ChessRules.initialBoard(state.standardSetup,piece);
+    state.enPassant=null;state.lastMove=null;state.selected=null;state.legalTargets=[];
     for(const color of ["w","b"])if(multiplayerOwnsColor(color)){
       state.players[color].automation=window.EconomyUI.initialAutomation(color);window.EconomyRules.player(state.players[color]);
     }
@@ -550,7 +568,7 @@ function setupLobby(){
     state.orbitalSettings={...CFG.orbitalStrike};
     buildShop();
     for(const color of ["w","b"]){
-      state.players[color].money=CFG.startMoney;
+      state.players[color].money=state.setupMode==="custom"?state.customSetup.money[color]:CFG.startMoney;
       state.players[color].salary=CFG.startSalary;
       state.players[color].salaryLevel=0;
       state.players[color].ap=CFG.maxAP;
@@ -562,8 +580,11 @@ function setupLobby(){
   const begin=()=>{
     const role=multiplayerRole();
     if(mode==="multi"&&!role)return;
-    if((mode!=="multi"&&!role)||(mode==="multi"&&!["guest","spectator"].includes(role)))apply();
-    if(!state.started)log(langText("log.gameStarted","게임 시작. 양측 킹 1개 + {money}.",{money:fmt(CFG.startMoney)}),"gold");
+    if((mode!=="multi"&&!role)||(mode==="multi"&&!["guest","spectator"].includes(role)))if(apply()===false)return;
+    if(!state.started){
+      if(state.setupMode==="custom")log(langText("log.customStarted","커스텀 게임 시작. 백 초기 자금 {white} / 흑 초기 자금 {black}.",{white:fmt(state.players.w.money),black:fmt(state.players.b.money)}),"gold");
+      else log(langText("log.gameStarted","게임 시작. 양측 킹 1개 + {money}.",{money:fmt(CFG.startMoney)}),"gold");
+    }
     state.started=true;
     lobby.classList.add("hidden");
     render();
@@ -612,6 +633,10 @@ async function init() {
   buildStocks();
   bindControls();
   bindAudioControls();
+  window.SetupEditor.init({state,role:multiplayerRole,publish:publishEconomyLobby,sideName,standardName:stockPieceName,specialName:specialPieceName,
+    setMode:value=>{document.getElementById("lobbyBoardSetup").value=value;state.setupMode=value;},
+    image:unit=>unit.specialId?specialChessVisual(specialDef(unit.specialId),unit.color):pieceImgTag(unit.color+unit.type,"piece",stockPieceName(unit.type)),fallbacks:attachImageFallbacks});
+  document.getElementById("lobbyBoardSetup").addEventListener("change",publishEconomyLobby);
   window.EconomyUI.init({state,role:multiplayerRole,action:handleEconomyExpansion,
     publish:publishEconomyLobby,render,log,pieceName,sideName,money:fmt,tax:countTax,bankruptcy:CFG.bankruptcy});
   document.querySelectorAll(".lobby-settings input,.lobby-rules input,.lobby-economy-settings input").forEach(input=>input.addEventListener("change",publishEconomyLobby));
@@ -641,7 +666,14 @@ function purchasedPiece(type,color){ return {...piece(type,color),purchaseLocked
 function specialPiece(id,color){
   const def=SpecialPieces.get(id);
   const abilityCharges=Object.fromEntries((def?.abilities||[]).filter(a=>Number(a.params?.charges)>0).map(a=>[a.id,Number(a.params.charges)]));
-  return {type:"special",specialId:id,color,moved:false,purchaseLocked:true,active:false,activationTurn:state.turnNo+1,attackLockedTurns:3,abilityCharges,id:crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)};
+  const unit={type:"special",specialId:id,color,moved:false,purchaseLocked:true,active:false,activationTurn:state.turnNo+1,attackLockedTurns:3,abilityCharges,id:crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)};
+  const venture=specialAbility(def,"venture_roll");
+  if(venture)runAbility(venture.id,{state,piece:unit,params:venture.params||{},event:"purchase"});
+  return unit;
+}
+function movementSpec(piece,def=pieceDef(piece)){
+  const value=piece.growMovement||piece.ventureMovement||def?.movement||{};
+  return typeof value==="string"?{type:value}:value;
 }
 function refreshLanguageUI(){
   const stockSelect=document.getElementById("stockSelect"),selectedStock=stockSelect?.value;
@@ -1022,7 +1054,8 @@ function normalPieceInfo(p){
 }
 function showBoardPieceInfo(r,c){
   const p=state.board[r][c];if(!p)return;
-  const def=p.specialId?specialDef(p.specialId):normalPieceInfo(p);
+  const base=p.specialId?specialDef(p.specialId):normalPieceInfo(p);
+  const def=p.specialId?{...base,movement:movementSpec(p,base),score:pieceScore(p)}:base;
   const viewerOwns=p.color===pieceViewerColor();
   const hiddenFakeId=p.specialId&&isFakeKingDef(def)&&!viewerOwns;
   showPieceInfo(def,p.specialId?state.specialStock[p.specialId]||0:null,viewerOwns,p.id,hiddenFakeId?null:(p.specialId||p.type),p.color);
@@ -1205,7 +1238,8 @@ function pseudoMoves(r,c,board=state.board, attackOnly=false){
   if(p.attackLockedTurns>0&&attackOnly)return [];
   if(specialDisabledAt(r,c,p,board))return [];
   if(p.specialId){
-    const def=specialDef(p.specialId),ranged=specialAbility(def,"ranged_capture");let movement=p.growMovement||p.ventureMovement||(ranged?{type:"ranged_capture",...ranged.params}:def?.movement);
+    const def=specialDef(p.specialId),ranged=specialAbility(def,"ranged_capture");let movement=movementSpec(p,def);
+    if(ranged&&!p.growMovement&&!p.ventureMovement)movement={type:"ranged_capture",...ranged.params};
     if(p.specialId==="short_seller"){
       const opponent=state.players[enemyColor(p.color)],basis=Object.values(opponent.stockBasis||{}).reduce((sum,value)=>sum+Number(value||0),0),held=Object.entries(opponent.holdings||{}).reduce((sum,[key,qty])=>sum+Math.max(0,Number(opponent.stockBasis?.[key]||0)-STOCKS[key].price*qty),0),loss=basis?held/basis:0;
       const power=runAbility("power_from_enemy_stock_losses",{state,piece:p,owner:state.players[p.color],params:specialAbility(def,"power_from_enemy_stock_losses")?.params||{},event:"evaluate",lossPct:loss*100})||{rangeBonus:0,captureBonus:0};
@@ -1233,13 +1267,17 @@ function pseudoMoves(r,c,board=state.board, attackOnly=false){
       for(const dc of [-1,1]){const rr=r+dir,cc=c+dc;if(inBounds(rr,cc)&&board[rr][cc]&&board[rr][cc].color!==p.color)add(rr,cc);}
     }
   }
+  if(!attackOnly&&p.type==="p"){
+    const ep=window.ChessRules.enPassant(state,r,c,board);if(ep)out.push(ep);
+  }
+  if(!attackOnly&&p.type==="k")out.push(...window.ChessRules.castles(state,r,c,isSquareAttacked,board));
   return out.filter(x=>inBounds(x.r,x.c));
 }
 
 function isSquareAttacked(r,c,byColor,board=state.board){
   for(let rr=0;rr<8;rr++) for(let cc=0;cc<8;cc++){
     const p=board[rr][cc]; if(!p||p.color!==byColor) continue;
-    const moves=pseudoMoves(rr,cc,board,p.type==="p");
+    const moves=pseudoMoves(rr,cc,board,true);
     if(moves.some(x=>x.r===r&&x.c===c)) return true;
   }
   return false;
@@ -1251,18 +1289,20 @@ function findKing(color,board=state.board){
 }
 function isKingInCheck(color,board=state.board){ const k=findKing(color,board); return k ? isSquareAttacked(k.r,k.c,enemyColor(color),board) : true; }
 function kingDangerTargetsFor(r,c){
-  const king=state.board[r][c];
-  if(!king||king.color!==state.turn||!isKingLike(king))return [];
-  return pseudoMoves(r,c,state.board,false).filter(target=>{
-    const board=cloneBoard();
-    board[target.r][target.c]={...king,moved:true};
-    board[r][c]=null;
-    return isSquareAttacked(target.r,target.c,enemyColor(king.color),board);
+  const unit=state.board[r][c];
+  if(!unit||unit.color!==state.turn||state.mode)return [];
+  return legalMovesFor(r,c).filter(target=>{
+    const ranged=Boolean(unit.specialId&&specialAbility(specialDef(unit.specialId),"ranged_capture"));
+    const board=window.ChessRules.simulate(state,{r,c},target,ranged);
+    const info=window.ChessRules.moveInfo(state,{r,c},target),victim=state.board[info.capture.r][info.capture.c];
+    const explosion=victim?.specialId&&specialAbility(specialDef(victim.specialId),"explode_on_capture");
+    if(explosion){const radius=Number(explosion.params?.radius)||1;for(let rr=target.r-radius;rr<=target.r+radius;rr++)for(let cc=target.c-radius;cc<=target.c+radius;cc++)if(inBounds(rr,cc))board[rr][cc]=null;}
+    return isKingInCheck(unit.color,board);
   });
 }
 function legalMovesFor(r,c){
   const p=state.board[r][c]; if(!p) return [];
-  return pseudoMoves(r,c,state.board,false).filter(target=>!(p.attackLockedTurns>0&&state.board[target.r][target.c]));
+  return pseudoMoves(r,c,state.board,false).filter(target=>!(p.attackLockedTurns>0&&(state.board[target.r][target.c]||target.enPassant)));
 }
 function tryCaptureDefense(captured,captureSquare,beforeBoard,attacker,fromSquare){
   if(!captured?.specialId)return false;
@@ -1311,6 +1351,7 @@ function runCapturedAbilityEffects(captured,captureSquare,attacker,beforeBoard){
 function runCaptureAbilityEffects(moving,captured,captureSquare){
   const effects=[];
   for(const ability of specialAbilities(specialDef(moving?.specialId))){
+    if(ability.id==="grow_on_capture")continue;
     const result=runAbility(ability.id,{state,piece:moving,captured,owner:state.players[moving.color],params:ability.params||{},event:"capture",captureSquare});
     if(result)effects.push(result);
   }
@@ -1340,10 +1381,14 @@ function applyMoveAbilityEffects(effects,to,moving){
 }
 function payMoveIncome(effects,moving){for(const effect of effects)if(effect.moveIncome){current().money+=effect.moveIncome;log(langText("log.moveIncome","{v0} 이동 수익 +{v1}",{v0:pieceName(moving),v1:fmt(effect.moveIncome)}),"good");}}
 function makeMove(fr,fc,tr,tc){
+  if(!inBounds(fr,fc)||!inBounds(tr,tc))return;
   const pl=current(); if(pl.moveUsed) return log(langText("notice.oneMove","일반 체스 이동은 턴당 1번이야."),"bad");
   if(pl.ap<1) return log(langText("notice.noMoveAP","이동할 AP가 없어."),"bad");
-  const moving=state.board[fr][fc]; const captured=state.board[tr][tc];
+  const moving=state.board[fr][fc];
+  const moveInfo=window.ChessRules.moveInfo(state,{r:fr,c:fc},{r:tr,c:tc});
+  const captured=state.board[moveInfo.capture.r][moveInfo.capture.c],previousEnPassant=state.enPassant;
   if(!moving || moving.color!==state.turn) return;
+  if(!legalMovesFor(fr,fc).some(target=>target.r===tr&&target.c===tc))return;
   const rangedCapture=Boolean(moving.specialId&&specialAbility(specialDef(moving.specialId),"ranged_capture"));
   if(rangedCapture&&(!captured||captured.color===moving.color))return log(langText("notice.sniperEnemy","저격은 사거리 안의 적 기물만 노릴 수 있어."),"bad");
   if(moving.purchaseLocked&&!moving.active)return log(langText("notice.purchaseInactive","구매한 기물은 다음 자기 턴부터 활성화돼."),"bad");
@@ -1353,8 +1398,17 @@ function makeMove(fr,fc,tr,tc){
   const moveLogEl=log(`${pieceName(moving,state.turn)} ${sqName(fr,fc)} → ${sqName(tr,tc)}${captured?` × ${pieceName(captured,state.turn)}`:""}`);
   playSound(captured?"capture":"move");
   const beforeBoard=cloneBoard();
+  state.enPassant=null;
   const uci=sqName(fr,fc)+sqName(tr,tc)+(moving.type==="p" && (tr===0||tr===7)?"q":"");
   if(rangedCapture)state.board[tr][tc]=null;else{state.board[tr][tc]={...moving,moved:true};state.board[fr][fc]=null;}
+  if(moveInfo.enPassant)state.board[moveInfo.capture.r][moveInfo.capture.c]=null;
+  if(moveInfo.castle){
+    const rook=state.board[moveInfo.castle.from.r][moveInfo.castle.from.c];
+    state.board[moveInfo.castle.to.r][moveInfo.castle.to.c]={...rook,moved:true};
+    state.board[moveInfo.castle.from.r][moveInfo.castle.from.c]=null;
+    log(langText("log.castled","캐슬링을 완료했습니다."));
+  }
+  if(moveInfo.enPassant)log(langText("log.enPassant","앙파상으로 폰을 포획했습니다."));
   const moveEffects=runMoveAbilityEffects(moving,{r:fr,c:fc},{r:tr,c:tc});
   applyMoveAbilityEffects(moveEffects,{r:tr,c:tc},moving);
   pl.ap--; pl.moveUsed=true;
@@ -1363,9 +1417,10 @@ function makeMove(fr,fc,tr,tc){
   if(captured){
     const captureEffects=runCaptureAbilityEffects(moving,captured,{r:tr,c:tc});
     if(captureEffects.some(effect=>effect.defense)){
-      state.board=beforeBoard;log(langText("log.captureBlocked","{v0}의 포획이 특수능력에 막혔어.",{v0:pieceName(moving)}) ,"gold");state.selected={r:fr,c:fc};state.legalTargets=[];render();return;
+      state.board=beforeBoard;state.enPassant=previousEnPassant;log(langText("log.captureBlocked","{v0}의 포획이 특수능력에 막혔어.",{v0:pieceName(moving)}) ,"gold");state.selected={r:fr,c:fc};state.legalTargets=[];render();return;
     }
     if(tryNearbyCaptureDefense(captured,{r:tr,c:tc},beforeBoard)||tryCaptureDefense(captured,{r:tr,c:tc},beforeBoard,moving,{r:fr,c:fc})){
+      state.enPassant=previousEnPassant;
       state.selected=state.board[tr][tc]?.color===state.turn?{r:fr,c:fc}:{r:tr,c:tc};state.legalTargets=[];render();return;
     }
     payMoveIncome(moveEffects,moving);
@@ -1401,8 +1456,14 @@ function makeMove(fr,fc,tr,tc){
     if(isKingLike(captured)&&state.players[captured.color].insurance){
       state.players[captured.color].insurance=false;
       state.board[fr][fc]=moving;state.board[tr][tc]=captured;pl.money-=reward;
+      state.enPassant=previousEnPassant;
       log(langText("log.insuranceSaved","{v0} 킹 포획을 부활 보험이 막았다.",{v0:sideName(captured.color)}),"gold");
       state.selected={r:fr,c:fc};state.legalTargets=[];render();return;
+    }
+    const survivor=rangedCapture?state.board[fr][fc]:state.board[tr][tc];
+    if(survivor?.id===moving.id){
+      const growth=specialAbility(specialDef(moving.specialId),"grow_on_capture");
+      if(growth)runAbility(growth.id,{state,piece:survivor,params:growth.params||{},event:"capture"});
     }
     pl.money+=reward;
     const capturedName=pieceName(captured,state.turn);
@@ -1412,10 +1473,10 @@ function makeMove(fr,fc,tr,tc){
       pl.ap=Math.max(0,pl.ap-penalty);
       log(langText("log.fakeKing","포획한 기물은 가짜 킹이었다. 포획자 AP -{v0}.",{v0:penalty}),"gold");
     }
-    state.lastMove={fr,fc,tr,tc,color:state.turn};
+    state.lastMove={fr,fc,tr,tc,color:state.turn,enPassant:moveInfo.enPassant};
     state.selected=rangedCapture?{r:fr,c:fc}:{r:tr,c:tc}; state.legalTargets=[];
     if(captured.type==="k"||(captured.specialId&&isCountsAsKingDef(specialDef(captured.specialId))))finishGame(state.turn,`${captured.color==="w"?"백":"흑"} 킹 포획`,"result.kingCaptured",{side:captured.color});
-    evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),uci,mover:state.turn,revision,moveId,moveLogEl,square:{r:tr,c:tc},info:{capture:true,check:isKingInCheck(enemyColor(),state.board),capturedValue:piecePrice(captured),movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
+    evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),beforeRules:{standardSetup:state.standardSetup,enPassant:previousEnPassant},afterRules:{standardSetup:state.standardSetup,enPassant:state.enPassant},captureSquare:moveInfo.capture,uci,mover:state.turn,revision,moveId,moveLogEl,square:{r:tr,c:tc},info:{capture:true,check:isKingInCheck(enemyColor(),state.board),capturedValue:piecePrice(captured),movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
     render();
     if(state.gameOver)return;
     return;
@@ -1423,8 +1484,10 @@ function makeMove(fr,fc,tr,tc){
   payMoveIncome(moveEffects,moving);
   if(moving.type==="p" && (tr===0||tr===7)){ state.board[tr][tc]={...state.board[tr][tc],type:"q"}; log(langText("notice.pawnPromoted","폰 승급 → 퀸!"),"gold"); }
   visitSquare(tr,tc,state.turn);
-  state.lastMove={fr,fc,tr,tc,color:state.turn};
-  evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),uci,mover:state.turn,revision,moveId,moveLogEl,square:{r:tr,c:tc},info:{capture:false,check:isKingInCheck(enemyColor(),state.board),capturedValue:0,movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
+  if(moveInfo.castle)visitSquare(moveInfo.castle.to.r,moveInfo.castle.to.c,state.turn);
+  state.enPassant=window.ChessRules.nextEnPassant(moving,{r:fr,c:fc},{r:tr,c:tc},state.turnNo);
+  state.lastMove={fr,fc,tr,tc,color:state.turn,castle:moveInfo.castle};
+  evaluateMoveWithStockfish({beforeBoard,afterBoard:cloneBoard(),beforeRules:{standardSetup:state.standardSetup,enPassant:previousEnPassant},afterRules:{standardSetup:state.standardSetup,enPassant:state.enPassant},captureSquare:moveInfo.capture,uci,mover:state.turn,revision,moveId,moveLogEl,square:{r:tr,c:tc},info:{capture:false,check:isKingInCheck(enemyColor(),state.board),capturedValue:0,movingValue:piecePrice(moving),movingIsStandard:!moving.specialId}});
   state.selected={r:tr,c:tc}; state.legalTargets=[];
   checkBankruptcy(); render();
 }
@@ -1670,6 +1733,7 @@ function endTurn(timedOut=false){
   const mover=state.turn, next=enemyColor(mover);
   stopTurnTimer();
   state.turn=next;state.turnNo++;
+  if(state.enPassant?.color!==next)state.enPassant=null;
   const auctionResults=window.EconomyRules.settleAuctions(state);
   if(auctionResults.length)log(window.EconomyUI.t("settled"),"gold");
   const p=current();p.ownTurns++;p.ap=CFG.maxAP;p.moveUsed=false;playSound("select");
@@ -1992,14 +2056,15 @@ async function evaluateMoveWithStockfish(context){
   const playerUci=String(context.uci||"").toLowerCase();
   const from=fromName(playerUci.slice(0,2)),to=fromName(playerUci.slice(2,4));
   const movingPiece=context.beforeBoard?.[from.r]?.[from.c]||null;
-  const capturedPiece=context.beforeBoard?.[to.r]?.[to.c]||null;
+  const captureSquare=context.captureSquare||to;
+  const capturedPiece=context.beforeBoard?.[captureSquare.r]?.[captureSquare.c]||null;
   const materialBefore=context.beforeBoard?stockfishMaterial(context.beforeBoard):null;
   const materialAfter=context.afterBoard?stockfishMaterial(context.afterBoard):null;
   const standardLegal=standardLegalUci(context.beforeBoard,context.mover,playerUci);
   const debugSkipped=(classification,extra={})=>debugStockfishMoveEval({beforeFen:"unavailable",playerUci,stockfishBestmove:null,bestmoveMatch:false,rawBestScore:null,rawPlayedScore:null,rootSideBefore:context.mover,rootSidePlayed:enemyColor(context.mover),normalizedBestScore:null,normalizedPlayedScore:null,moverColor:context.mover,bestScoreMoverPOV:null,playedScoreMoverPOV:null,centipawnLoss:null,movingPiece:stockfishPieceLabel(movingPiece),capturedPiece:stockfishPieceLabel(capturedPiece),materialBefore,materialAfter,confidence:context.confidence??null,analysisValid:false,invalidReason:classification,standardLegal:extra.standardLegal??standardLegal,bonusEligible:false,classification:extra.grade||"Fallback",bonus:0});
   if(!window.stockfishPositionAdapter){fallbackStockfishGrade(context,"adapter unavailable",capturedPiece);return;}
-  const beforePosition=stockfishPositionAdapter.fromBoard(context.beforeBoard,context.mover);
-  const afterPosition=stockfishPositionAdapter.fromBoard(context.afterBoard,enemyColor(context.mover));
+  const beforePosition=stockfishPositionAdapter.fromBoard(context.beforeBoard,context.mover,context.beforeRules);
+  const afterPosition=stockfishPositionAdapter.fromBoard(context.afterBoard,enemyColor(context.mover),context.afterRules);
   context.confidence=Math.min(beforePosition.confidence,afterPosition.confidence);
   const enemyKingPresent=context.afterBoard?.flat().some(piece=>piece&&piece.color===enemyColor(context.mover)&&isKingLike(piece));
   if(!enemyKingPresent){fallbackStockfishGrade(context,"king captured",capturedPiece);return;}
@@ -2051,7 +2116,9 @@ function render(){
     el.classList.remove("selected","legal","capture","buy-target","teleport-target","in-check","king-danger","dragging");
     if(state.selected?.r===r&&state.selected?.c===c)el.classList.add("selected");
     const legal=state.legalTargets.some(x=>x.r===r&&x.c===c);if(legal)el.classList.add(p?"capture":"legal");
-    if(state.kingDangerTargets.some(x=>x.r===r&&x.c===c))el.classList.add("king-danger");
+    const kingDanger=state.kingDangerTargets.some(x=>x.r===r&&x.c===c);
+    if(kingDanger)el.classList.add("king-danger");
+    el.title=kingDanger?langText("board.kingDanger","이동하면 아군 킹이 공격받거나 제거될 수 있습니다."):"";
     if(["buy","special-buy","warehouse-deploy"].includes(state.mode)&&homeZone(state.turn,r)&&!p)el.classList.add("buy-target");
     if(state.mode==="teleport"&&!p)el.classList.add("teleport-target");
     if(isKingLike(p) && isKingInCheck(p.color,state.board)) el.classList.add("in-check");
@@ -2083,6 +2150,8 @@ function render(){
   document.getElementById("apValue").textContent=`${p.ap} / ${CFG.maxAP}`;
   document.getElementById("moveState").textContent=langText("game.moveState","체스 수: {state}",{state:p.moveUsed?langText("game.moveUsed","사용 완료"):langText("game.moveAvailable","사용 가능")});
   document.getElementById("selectedSquare").textContent=state.selected?sqName(state.selected.r,state.selected.c):langText("board.none","없음");
+  const dangerHint=document.getElementById("kingDangerHint");
+  if(dangerHint)dangerHint.textContent=state.kingDangerTargets.length?langText("board.kingDangerHint","빨간 칸은 이동 후 킹이 위험해지는 위치입니다. 핀·앙파상에 따른 공격선 변화도 표시합니다."):"";
   document.getElementById("salaryUpgradeText").textContent=langText("economy.salarySummary","\ud604\uc7ac {current}/\ud134 | \uc778\uc0c1 \ud6c4 {next}/\ud134 | \ube44\uc6a9 {cost} | 1 AP",{current:fmt(p.salary),next:fmt(p.salary+CFG.salaryRaise),cost:fmt(salaryCost(p))});
   const actionSmall=id=>document.querySelector('#'+id+' small');
   const jobSmall=actionSmall("jobBtn");if(jobSmall)jobSmall.textContent=langText("economy.jobReward","+ {amount} \xb7 1 AP",{amount:fmt(CFG.jobPay)});

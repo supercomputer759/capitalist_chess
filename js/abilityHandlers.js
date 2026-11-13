@@ -48,7 +48,18 @@
     ranged_capture(){return null;},
     sacrifice_for_king(ctx){if(ctx.event==="capture"&&ctx.captured&&ctx.captured.color===ctx.owner?.color){const pos=locate(ctx.state,ctx.piece);if(pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1))return {defense:true,sacrifice:true};}return null;},
     produce_pawn(ctx){if(ctx.event!=="turn")return null;const pos=locate(ctx.state,ctx.piece),interval=Math.max(1,Number(ctx.params.intervalTurns)||1);if(!pos||ctx.state.turnNo%interval)return null;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const r=pos.r+dr,c=pos.c+dc;if(inside(r,c)&&!ctx.state.board[r][c]){ctx.state.board[r][c]={type:"p",color:ctx.piece.color,moved:false,id:crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)};return null;}}return null;},
-    venture_roll(ctx){if(ctx.event==="turn"&&ctx.piece){let n=Math.random(),sum=0;for(const outcome of ctx.params.outcomes||[]){sum+=Number(outcome.weight)||0;if(n<=sum){ctx.piece.ventureMovement=outcome.movement;ctx.piece.ventureScore=outcome.score;break;}}}return null;},
+    venture_roll(ctx){
+      if(!["purchase","turn"].includes(ctx.event)||!ctx.piece||ctx.piece.ventureMovement)return null;
+      const outcomes=(ctx.params.outcomes||[]).filter(item=>Number(item.weight)>0);
+      const total=outcomes.reduce((sum,item)=>sum+Number(item.weight),0);let roll=Math.random()*total;
+      for(const outcome of outcomes){
+        roll-=Number(outcome.weight);if(roll<=0){
+          ctx.piece.ventureMovement=typeof outcome.movement==="string"?{type:outcome.movement}:outcome.movement;
+          ctx.piece.ventureScore=outcome.score;break;
+        }
+      }
+      return null;
+    },
     hostile_takeover(ctx){if(ctx.event==="action")return {takeover:true,premiumFraction:Number(ctx.params.premiumFraction)||0};return null;},
     magnet_pull_on_move(ctx){if(ctx.event==="move")return {magnet:true};return null;},
     paid_friendly_swap(ctx){if(ctx.event==="action")return {moneyCost:Number(ctx.params.moneyCost)||0,apCost:Number(ctx.params.apCost)||0};return null;},
@@ -59,7 +70,7 @@
     ,capture_chance(ctx){if(ctx.event==="capture"&&Math.random()<=Number(ctx.params.chance||0))return {defense:true};return null;}
     ,nearby_toll_bonus(ctx){if(ctx.event!=="toll"||!ctx.captureSquare)return null;const pos=locate(ctx.state,ctx.piece);return pos&&distance(pos,ctx.captureSquare)<=Number(ctx.params.radius||1)?{tollMultiplier:Number(ctx.params.multiplier)||1}:null;}
     ,king_shelter(ctx){if(ctx.event!=="capture"||!ctx.captureSquare||!ctx.captured)return null;const king=ctx.captured.type==="k"||(ctx.captured.specialId&&window.SpecialPieces?.get(ctx.captured.specialId)?.abilities?.some(a=>a.id==="royal_unit"&&a.params?.countsAsKing));if(!king)return null;const charges=Number(ctx.piece.abilityCharges?.king_shelter??ctx.params.charges??0),pos=locate(ctx.state,ctx.piece);if(charges<=0||!pos||distance(pos,ctx.captureSquare)>Number(ctx.params.radius||1))return null;ctx.piece.abilityCharges={...(ctx.piece.abilityCharges||{}),king_shelter:charges-1};return {defense:true,sacrifice:Boolean(ctx.params.sacrifice)};}
-    ,grow_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece){ctx.piece.growthCaptures=Number(ctx.piece.growthCaptures||0)+1;const stages=ctx.params.stages||[];const current=stages.filter(stage=>Number(stage.captures)<=ctx.piece.growthCaptures).at(-1);if(current)ctx.piece.growMovement=current.movement; }return null;}
+    ,grow_on_capture(ctx){if(ctx.event==="capture"&&ctx.piece){ctx.piece.growthCaptures=Number(ctx.piece.growthCaptures||0)+1;const stages=ctx.params.stages||[];const current=stages.filter(stage=>Number(stage.captures)<=ctx.piece.growthCaptures).sort((a,b)=>Number(a.captures)-Number(b.captures)).at(-1);if(current)ctx.piece.growMovement=typeof current.movement==="string"?{type:current.movement}:current.movement; }return null;}
     ,mirror_first_attack(ctx){if(ctx.event==="beingCaptured"&&ctx.piece&&!ctx.piece.mirrorUsed){ctx.piece.mirrorUsed=true;return {mirror:true};}return null;}
     ,power_from_enemy_stock_losses(ctx){if(ctx.event!=="evaluate")return null;const lossPct=Number(ctx.lossPct??ctx.params.lossPct)||0;const stage=[...(ctx.params.thresholds||[])].filter(item=>lossPct>=Number(item.lossPct)).at(-1);return stage||{rangeBonus:0,captureBonus:0};}
     ,allow_credit_purchases(ctx){return ctx.event==="purchase"?{creditLimit:Number(ctx.params.creditLimit)||0,interestPerTurn:Number(ctx.params.interestPerTurn)||0}:null;}

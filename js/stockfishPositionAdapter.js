@@ -15,12 +15,14 @@
   function equivalentFor(piece,allowRoyal=true){
     if(!piece?.specialId)return piece?.type;
     const def=window.SpecialPieces?.get(piece.specialId);if(!def)return "p";
+    const changed=piece.growMovement||piece.ventureMovement;
+    if(changed){const movement=typeof changed==="string"?{type:changed}:changed;return movement.type==="knight_bishop"?"b":fallbackEquivalent({movement});}
     const configured=def.stockfish?.equivalent;
     if(typeof configured==="string"&&configured!=="k")return configured;
     if(allowRoyal&&(configured==="k"||royal(def)))return "k";
     return fallbackEquivalent(def);
   }
-  function fromBoard(board,sideToMove){
+  function fromBoard(board,sideToMove,rules={}){
     const mapped=Array.from({length:8},()=>Array(8).fill(null));let included=0,equivalent=0,excluded=0,approximate=0,penalty=0;
     const kings={w:0,b:0};
     for(let r=0;r<8;r++)for(let c=0;c<8;c++){
@@ -40,7 +42,15 @@
     }
     const rows=mapped.map(row=>{let out="",empty=0;for(const piece of row){if(!piece){empty++;continue;}if(empty){out+=empty;empty=0;}let ch=piece.type;if(piece.color==="w")ch=ch.toUpperCase();out+=ch;}if(empty)out+=empty;return out;});
     const confidence=Math.max(0.4,Math.min(1,1-Math.min(0.42,penalty*0.25)-excluded*0.12-approximate*0.015));
-    return {fen:`${rows.join("/")} ${sideToMove} - - 0 1`,confidence,included,equivalent,excluded,approximate,kings:kings.w+kings.b,analyzable:included>0&&kings.w===1&&kings.b===1};
+    let castling="";
+    if(rules.standardSetup)for(const [color,row,letters] of [["w",7,["K","Q"]],["b",0,["k","q"]]]){
+      const king=board[row][4];if(king?.type!=="k"||king.color!==color||king.moved||!king.castleEligible)continue;
+      for(const [index,c] of [7,0].entries()){const rook=board[row][c];if(rook?.type==="r"&&rook.color===color&&!rook.moved&&rook.castleEligible)castling+=letters[index];}
+    }
+    const epState=rules.enPassant,victim=epState?board[epState.victim.r]?.[epState.victim.c]:null;
+    const ep=epState?.color===sideToMove&&victim?.type==="p"&&victim.id===epState.pawnId?epState.target:null;
+    const epSquare=ep?"abcdefgh"[ep.c]+(8-ep.r):"-";
+    return {fen:`${rows.join("/")} ${sideToMove} ${castling||"-"} ${epSquare} 0 1`,confidence,included,equivalent,excluded,approximate,kings:kings.w+kings.b,analyzable:included>0&&kings.w===1&&kings.b===1};
   }
   function confidenceLabel(value){const key=value>=.85?"confidence.high":value>=.6?"confidence.medium":"confidence.low";const fallback=value>=.85?"높음":value>=.6?"보통":"낮음";return window.GameLanguage?.text(key,fallback)??fallback;}
   window.stockfishPositionAdapter={fromBoard,confidenceLabel,equivalentFor};

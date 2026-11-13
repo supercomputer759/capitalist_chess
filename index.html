@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="assets/effects/cataclysm/host.css" />
   <link rel="stylesheet" href="assets/economy.css" />
+  <link rel="stylesheet" href="assets/setup-editor.css" />
 </head>
 <body>
   <div class="lobby-screen" id="lobbyScreen">
@@ -24,6 +25,7 @@
       <section class="lobby-hub" id="lobbyHub">
         <div class="lobby-hub-head"><h2 data-i18n="lobby.hubTitle">싱글플레이 허브</h2><div class="lobby-statuses"><span id="lobbyInternetStatus">인터넷: 로컬 모드</span><span id="lobbyConnectionStatus">방: 로컬 게임</span></div></div>
         <section id="economyPresetPanel" class="economy-preset-panel"></section>
+        <div class="lobby-board-mode"><label><span data-i18n="lobby.boardSetup">시작 기물 배치</span><select id="lobbyBoardSetup"><option value="kings" data-i18n="lobby.kingsSetup">킹만 배치</option><option value="standard" data-i18n="lobby.standardSetup">기본 체스 배치 · 캐슬링 사용</option><option value="custom" data-i18n="lobby.customSetup">커스텀 배치·초기 자금</option></select></label><button type="button" id="editCustomSetup" data-i18n="setup.edit">배치 편집</button></div>
         <div class="lobby-settings">
           <label><span data-i18n="lobby.initialMoney">초기 자금</span><input id="lobbyMoney" type="number" min="0" step="100" value="1600"></label>
           <label><span data-i18n="lobby.initialSalary">초기 월급</span><input id="lobbySalary" type="number" min="0" step="10" value="190"></label>
@@ -112,6 +114,7 @@
 
         <section class="panel board-info">
           <div class="panel-head"><h2 data-i18n="board.selectionTitle">선택 칸</h2><span id="selectedSquare">없음</span></div>
+          <p id="kingDangerHint" class="king-danger-hint" role="status"></p>
           <div class="tile-info" id="tileInfo" data-i18n="board.squarePrompt">칸을 클릭하면 부동산 정보가 표시돼.</div>
           <div class="button-row"><button id="buyPropertyBtn" data-i18n="button.buyProperty">선택 칸 매입</button><button id="sellPieceBtn" data-i18n="button.sellPiece">선택 기물 매각</button></div>
         </section>
@@ -179,6 +182,7 @@
   <script src="js/language.js"></script>
   <script src="js/multiplayer.js"></script>
   <script src="js/movementHandlers.js"></script>
+  <script src="js/chessRules.js"></script>
   <script src="js/abilityHandlers.js"></script>
   <script src="js/specialPieces.js"></script>
   <script src="js/specialPieceArt.js"></script>
@@ -189,6 +193,7 @@
   <script src="js/stockfishEngine.js"></script>
   <script src="js/economyRules.js"></script>
   <script src="js/economyUI.js"></script>
+  <script src="js/setupEditor.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
