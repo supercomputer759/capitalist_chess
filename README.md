@@ -12,6 +12,10 @@
 
 Windows에서는 `START_GAME.bat`을 더블클릭하면 된다.
 
+### 온라인 멀티플레이
+
+멀티 서버는 Cloudflare Workers + Durable Objects에서 실행합니다. 로컬에서 게임을 열어도 운영 서버로 접속하며, 방마다 자동 배치하고 진입 워커에는 Smart Placement를 사용합니다. 서버 주소와 실행·배포·검증 방법은 [멀티 서버 안내](server/README.md)를 참고하세요.
+
 ## 현재 들어간 기능
 
 - 킹 1개 + 초기자금으로 시작

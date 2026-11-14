@@ -2,6 +2,19 @@
   "name": "capitalist-chess-room-server",
   "private": true,
   "type": "commonjs",
-  "scripts": {"start": "node server.js"},
-  "dependencies": {"ws": "^8.18.0"}
+  "scripts": {
+    "start": "wrangler dev --port 8080",
+    "dev": "wrangler dev --port 8080",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run",
+    "start:node": "node server.js",
+    "test": "node --test --test-isolation=none ../tests/cloudflare-server.test.cjs ../tests/multiplayer-client.test.cjs",
+    "test:integration": "node --test --test-isolation=none ../tests/cloudflare-integration.test.cjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.150.0"
+  }
 }

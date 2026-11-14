@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "capitalist-chess",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-06",
+  "workers_dev": true,
+  "preview_urls": false,
+  // 진입 워커는 트래픽에 맞춰 자동 배치합니다. 특정 리전은 고정하지 않습니다.
+  "placement": {"mode": "smart"},
+  "durable_objects": {
+    "bindings": [{"name": "ROOMS", "class_name": "ChessRoom"}]
+  },
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["ChessRoom"]}]
+}

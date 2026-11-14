@@ -1,0 +1,5 @@
+server/node_modules/
+server/.wrangler/
+server/.npm-cache/
+server/.dev.vars
+server/.env
