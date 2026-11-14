@@ -47,6 +47,13 @@
       square.oncontextmenu=event=>{event.preventDefault();draft.pieces=draft.pieces.filter(p=>p.r!==r||p.c!==c);paint();};
     }
     modal.querySelectorAll("[data-setup-piece]").forEach(el=>el.classList.toggle("active",el.dataset.setupPiece===(selection?.specialId||selection?.type||"erase")));
+    modal.querySelectorAll("[data-setup-color]").forEach(el=>{const active=el.dataset.setupColor===color;el.classList.toggle("active",active);el.setAttribute("aria-pressed",String(active));});
+    const defs=definitions();
+    modal.querySelectorAll(".setup-palette [data-setup-piece]").forEach(el=>{
+      const id=el.dataset.setupPiece;if(id==="erase")return;
+      if(["p","n","b","r","q","k"].includes(id))el.innerHTML=host.image({type:id,color});
+      else if(defs[id])el.innerHTML=host.image({type:"special",specialId:id,color});
+    });
     host.fallbacks?.(modal);
   }
   function open(){
@@ -58,8 +65,14 @@
     const body=node("div",card);body.className="setup-editor-body";
     node("div",body).className="setup-board";
     const controls=node("div",body);controls.className="setup-tools";
-    const sideLabel=node("label",controls,text("color")),side=node("select",sideLabel);
-    for(const value of ["w","b"]){const option=node("option",side,host.sideName(value));option.value=value;}side.value=color;side.onchange=()=>{color=side.value;};
+    const sideLabel=node("b",controls,text("color"));sideLabel.className="setup-color-label";
+    const sidePicker=node("div",controls);sidePicker.className="setup-color-picker";sidePicker.setAttribute("role","group");sidePicker.setAttribute("aria-label",text("color"));
+    for(const value of ["w","b"]){
+      const choice=button(sidePicker,"",()=>{color=value;paint();});choice.className="setup-color-button";choice.dataset.setupColor=value;
+      const preview=node("span",choice);preview.className="setup-color-preview";preview.innerHTML=host.image({type:"k",color:value});
+      const name=node("span",choice,host.sideName(value));name.className="setup-color-name";
+      choice.title=host.sideName(value);choice.setAttribute("aria-label",host.sideName(value));
+    }
     for(const side of ["w","b"]){const label=node("label",controls,text(side==="w"?"whiteMoney":"blackMoney"));const input=node("input",label);input.type="number";input.min="0";input.max="1000000";input.step="100";input.value=draft.money[side];input.oninput=()=>{draft.money[side]=Number(input.value);};}
     const castleLabel=node("label",controls),castle=node("input",castleLabel);castle.type="checkbox";castle.checked=draft.castling;castle.onchange=()=>{draft.castling=castle.checked;};node("span",castleLabel,text("castling"));
     const palette=node("div",controls);palette.className="setup-palette";
@@ -77,7 +90,7 @@
       try{localStorage.setItem(STORAGE,JSON.stringify(config));localStorage.setItem("capitalistChessStartMode","custom");}catch(_){}
       close();host.publish();
     });
-    document.addEventListener("keydown",onKey);paint();side.focus();
+    document.addEventListener("keydown",onKey);paint();modal.querySelector(`[data-setup-color="${color}"]`)?.focus();
   }
   function init(adapter){
     host=adapter;document.getElementById("editCustomSetup").addEventListener("click",open);

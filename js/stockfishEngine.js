@@ -18,12 +18,19 @@
       }
       const request=this.pending;if(!request)return;
       const depth=line.match(/\bdepth\s+(\d+)/);if(depth)request.depth=Number(depth[1]);
-      const cp=line.match(/\bscore\s+cp\s+(-?\d+)/);if(cp)request.score={type:"cp",value:Number(cp[1])};
-      const mate=line.match(/\bscore\s+mate\s+(-?\d+)/);if(mate)request.score={type:"mate",value:Number(mate[1])};
+      const scoreCp=line.match(/\bscore\s+cp\s+(-?\d+)/),scoreMate=line.match(/\bscore\s+mate\s+(-?\d+)/);
+      if(scoreCp||scoreMate){
+        const multipv=Number(line.match(/\bmultipv\s+(\d+)/)?.[1]||1),lineDepth=Number(depth?.[1]||request.depth||0);
+        const score=scoreMate?{type:"mate",value:Number(scoreMate[1])}:{type:"cp",value:Number(scoreCp[1])};
+        const pv=line.match(/\bpv\s+(.+)$/),entry={multipv,depth:lineDepth,score,pv:pv?pv[1].trim().split(/\s+/):[]};
+        const previous=request.lines.get(multipv);if(!previous||entry.depth>=previous.depth)request.lines.set(multipv,entry);
+        if(multipv===1)request.score=score;
+      }
       const bestmove=line.match(/(?:^|\s)bestmove\s+(\S+)/);
       if(bestmove){
         const best=bestmove[1]||null;
-        this.finishRequest({bestmove:best,depth:request.depth||0,score:request.score,valid:Boolean(best&&best!=="(none)"&&(request.depth||0)>0),invalidReason:best==="(none)"?"bestmove (none)":(request.depth||0)<=0?"depth <= 0":null});
+        const lines=[...request.lines.values()].sort((a,b)=>a.multipv-b.multipv);
+        this.finishRequest({bestmove:best,depth:request.depth||0,score:lines[0]?.score||request.score,lines,valid:Boolean(best&&best!=="(none)"&&(request.depth||0)>0),invalidReason:best==="(none)"?"bestmove (none)":(request.depth||0)<=0?"depth <= 0":null});
       }
     }
     finishRequest(result){const request=this.pending;if(!request)return;this.pending=null;clearTimeout(request.timeout);this.emit("ready");request.resolve(result);}
@@ -48,12 +55,12 @@
     }
     async runAnalysis(fen,options={}){
       await this.init();if(this.pending)await this.stop(new Error("Superseded by newer analysis"));
-      this.emit("analyzing");this.send("ucinewgame");await this.waitForReady(Number(options.syncTimeout||5000));
+      this.emit("analyzing");const multiPV=Math.max(1,Math.min(5,Math.round(Number(options.multiPV)||1)));this.send(`setoption name MultiPV value ${multiPV}`);this.send("ucinewgame");await this.waitForReady(Number(options.syncTimeout||5000));
       const moves=Array.isArray(options.moves)&&options.moves.length?` moves ${options.moves.join(" ")}`:"";
       this.send("position fen "+fen+moves);
       const requestId=++this.requestSerial,timeoutMs=Math.max(5000,Number(options.timeout||12000));
       return new Promise((resolve,reject)=>{
-        const request={requestId,resolve,reject,depth:0,score:null,timeout:null};this.pending=request;
+        const request={requestId,resolve,reject,depth:0,score:null,lines:new Map(),timeout:null};this.pending=request;
         request.timeout=setTimeout(async()=>{if(this.pending!==request)return;const error=new Error("Stockfish analysis timeout");this.rejectRequest(error);try{this.send("stop");}catch(_){ }try{await this.waitForReady(5000);}catch(_){ }if(this.ready)this.emit("ready");},timeoutMs);
         const command=options.movetime?`go movetime ${Math.max(1,Number(options.movetime))}`:`go depth ${Math.max(1,Number(options.depth||12))}`;this.send(command);
       });

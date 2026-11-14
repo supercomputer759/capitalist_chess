@@ -148,6 +148,7 @@ export class ChessRoom extends DurableObject {
 
   replySession(ws, type, role, token, lastRevision) {
     send(ws, {type, code: this.room.code, token, role, revision: this.room.revision,
+      opponentConnected: role === "host" ? Boolean(this.room.guestConnection) : role === "guest" ? Boolean(this.room.hostConnection) : false,
       ...(type !== "roomCreated" ? {state: this.room.state} : {}),
       ...(lastRevision !== undefined ? {lastRevision: Number(lastRevision) || 0} : {})});
   }
@@ -203,6 +204,9 @@ export class ChessRoom extends DurableObject {
       return;
     }
     if (message.type === "state" && session.role === "host") {
+      if (message.state?.started === true && !room.guestConnection) {
+        return send(ws, {type: "error", message: "Opponent required to start"});
+      }
       room.state = message.state; room.revision = Number(message.revision) || 0;
       await this.save(); return this.broadcast({type: "state", state: room.state, revision: room.revision});
     }

@@ -35,23 +35,29 @@ const CFG = {
   brilliantBonus: 180,
   bestBonus: 80,
   promoteCost: 1500,
-  teleportCost: 900,
-  insuranceCost: 2000,
+  teleportCost: 3000,
+  insuranceCost: 8000,
   orbitalStrike: {enabled:true,price:24000,apCost:3,radius:1}
 };
 const CLOCK_INITIAL_SECONDS = 900;
 let orbitalTargetCancel=null;
 const ENGINE_EVAL_CONFIG = {
   depth: 10,
+  multiPV: 3,
   confidenceMinimum: 0.6,
-  brilliantBonus: 180,
-  bestBonus: 80,
-  goodBonus: 30,
+  brilliantBonus: 600,
+  bestBonus: 300,
+  excellentBonus: 180,
+  goodBonus: 100,
+  interestingBonus: 40,
+  bestMaxLoss: 25,
+  goodMaxLoss: 35,
   brilliantMaxLoss: 25,
-  bestMaxLoss: 45,
-  interestingMaxLoss: 60,
-  inaccuracyMaxLoss: 150,
-  mistakeMaxLoss: 300,
+  excellentMaxLoss: 35,
+  goodMaxLoss: 80,
+  interestingMaxLoss: 140,
+  inaccuracyMaxLoss: 220,
+  mistakeMaxLoss: 450,
   tacticalGain: 80
 };
 
@@ -121,6 +127,7 @@ function makePlayer(color) {
 
 const state = {
   started:false,
+  multiplayerHostColor:"w",
   economyRules:window.EconomyRules.preset("standard"),
   auctions:[],auctionSerial:0,lobbySettings:{},
   stockfishEnabled:true,
@@ -162,6 +169,7 @@ const state = {
   turnTimeLeft:CLOCK_INITIAL_SECONDS,
   turnTimerId:null,
   drawOffer:null,
+  positionEval:null,
   specialStock:{},
   specialRestockTurn:0,
   engineRevision:0,
@@ -231,6 +239,7 @@ function serializeGameState(){
   return JSON.parse(JSON.stringify({
     schemaVersion:1,
     started:state.started,
+    multiplayerHostColor:state.multiplayerHostColor,
     stockfishEnabled:state.stockfishEnabled,
     specialEnabled:state.specialEnabled,
     orbitalSettings:state.orbitalSettings,
@@ -251,6 +260,7 @@ function serializeGameState(){
     specialRestockTurn:state.specialRestockTurn,
     clock:state.clock,
     drawOffer:state.drawOffer,
+    positionEval:state.positionEval,
     news:state.news,
     recentNewsIds:state.recentNewsIds
   }));
@@ -289,6 +299,7 @@ function applyEconomySettings(settings={}){
 }
 function applyGameState(snapshot){
   if(!snapshot||snapshot.schemaVersion!==1)return false;
+  const previousEvalMoveId=state.positionEval?.moveId;
   const previousPriceMultiplier=state.economyRules.priceMultiplier;
   if(snapshot.economySettings)applyEconomySettings(snapshot.economySettings);
   state.enPassant=snapshot.enPassant||null;state.standardSetup=Boolean(snapshot.standardSetup);
@@ -297,6 +308,9 @@ function applyGameState(snapshot){
   state.economyRules=window.EconomyRules.normalize(snapshot.economyRules);
   state.auctions=snapshot.auctions||[];state.auctionSerial=Number(snapshot.auctionSerial)||0;
   state.lobbySettings=snapshot.lobbySettings||{};
+  state.multiplayerHostColor=snapshot.multiplayerHostColor==="b"?"b":"w";
+  window.multiplayer?.updateRoomUI();
+  window.dispatchEvent(new Event("multiplayer-host-color-change"));
   if(!snapshot.started)for(const [id,value] of Object.entries(state.lobbySettings)){
     const input=document.getElementById(id);if(!input?.matches(".lobby-settings input,.lobby-economy-settings input,.lobby-rules input:not([readonly]):not(#lobbyKingCapture)"))continue;
     if(input.type==="checkbox")input.checked=Boolean(value);else input.value=value;
@@ -306,14 +320,17 @@ function applyGameState(snapshot){
   state.board=snapshot.board||state.board;state.turn=snapshot.turn||state.turn;state.turnNo=Number(snapshot.turnNo||state.turnNo);
   state.players=snapshot.players||state.players;for(const color of ["w","b"]){const player=state.players[color];player.creditDebt=Number(player.creditDebt||0);player.stockBasis||=Object.fromEntries(Object.keys(STOCKS).map(key=>[key,0]));player.holdings||=Object.fromEntries(Object.keys(STOCKS).map(key=>[key,0]));}state.visits=snapshot.visits||{};state.properties=snapshot.properties||{};state.lastMove=snapshot.lastMove||null;
   for(const color of ["w","b"])window.EconomyRules.player(state.players[color]);
-  const wasGameOver=state.gameOver;state.gameOver=Boolean(snapshot.gameOver);state.gameResult=snapshot.gameResult||null;state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
+  const wasGameOver=state.gameOver;state.gameOver=Boolean(snapshot.gameOver);state.gameResult=snapshot.gameResult||null;state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.positionEval=snapshot.positionEval||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
   if(previousPriceMultiplier!==state.economyRules.priceMultiplier)buildShop();
   state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();
+  if(["guest","spectator"].includes(multiplayerRole())&&state.positionEval?.moveId&&state.positionEval.moveId!==previousEvalMoveId){
+    showMoveGradeEffect({grade:state.positionEval.gradeKey||"Unrated",bonus:state.positionEval.bonus||0,square:state.positionEval.square,moveId:state.positionEval.moveId});
+  }
   if(state.started)document.getElementById("lobbyScreen")?.classList.add("hidden");
   if(state.started&&!wasStarted){
     startTurnTimer();
     if(multiplayerRole()==="guest"){
-      const automation=window.EconomyUI.initialAutomation("b");
+      const automation=window.EconomyUI.initialAutomation(multiplayerColorForRole("guest"));
       for(const key of Object.keys(window.EconomyRules.DEFAULT_AUTOMATION)){
         window.EconomyUI.send("automation",{key,value:typeof automation?.[key]==="boolean"?automation[key]:true});
       }
@@ -327,10 +344,16 @@ function multiplayerRole(){
   const mp=window.multiplayer;
   return mp?.socket?.readyState===1&&mp.code&&mp.token?mp.role:null;
 }
+function multiplayerColorForRole(role=multiplayerRole()){
+  const hostColor=state.multiplayerHostColor==="b"?"b":"w";
+  if(role==="host")return hostColor;
+  if(role==="guest")return hostColor==="w"?"b":"w";
+  return null;
+}
+window.multiplayerColorForRole=multiplayerColorForRole;
 function multiplayerOwnsColor(color){
   const role=multiplayerRole();
-  if(role==="host")return color==="w";
-  if(role==="guest")return color==="b";
+  if(role==="host"||role==="guest")return color===multiplayerColorForRole(role);
   if(role==="spectator")return false;
   return true;
 }
@@ -515,8 +538,19 @@ function setupLobby(){
   const roomStatus=document.getElementById("lobbyRoomStatus");
   const tools=document.getElementById("lobbyMultiplayerTools");
   const start=document.getElementById("lobbyStartBtn");
+  const hostWhite=document.getElementById("lobbyHostWhiteBtn");
+  const hostBlack=document.getElementById("lobbyHostBlackBtn");
   if(!lobby||!single||!multi||!start)return;
   let mode="single";
+  const returnToLobby=()=>{
+    stopTurnTimer();
+    state.started=false;state.gameOver=false;state.gameResult=null;state.drawOffer=null;
+    state.mode=null;state.selected=null;state.legalTargets=[];
+    document.getElementById("gameOverModal")?.classList.add("hidden");
+    lobby.classList.remove("hidden");mode="multi";
+    renderInternet("offline");update();render();
+  };
+  if(window.multiplayer)window.multiplayer.onRoomEnded=returnToLobby;
   const update=()=>{
     const isMulti=mode==="multi",role=multiplayerRole();
     single.classList.toggle("active",!isMulti);
@@ -525,16 +559,30 @@ function setupLobby(){
     if(connection)connection.textContent=isMulti?(role?langText("lobby.onlineRoom","\uc628\ub77c\uc778 \ubc29")+" | "+(role==="spectator"?langText("network.spectatorLabel","Spectator · 관전자"):role==="host"?"Host":"Guest"):langText("lobby.waitingRoom","\ubc29 \uc5f0\uacb0 \ub300\uae30")):langText("lobby.localGame","\ub85c\uceec \uac8c\uc784");
     tools?.classList.toggle("hidden",!isMulti);
     start.textContent=langText(isMulti?"lobby.startMulti":"lobby.startSingle",isMulti?"\uba40\ud2f0\ud50c\ub808\uc774 \uc2dc\uc791":"\uc2f1\uae00\ud50c\ub808\uc774 \uc2dc\uc791");
-    start.disabled=isMulti&&!role;
-    document.querySelectorAll(".lobby-settings input:not([readonly]),.lobby-rules input:not(#lobbyKingCapture):not([readonly]),.lobby-economy-settings input").forEach(input=>input.disabled=isMulti&&["guest","spectator"].includes(role));
+    const opponentPresent=Boolean(window.multiplayer?.opponentPresent);
+    start.disabled=isMulti&&(role!=="host"||!opponentPresent);
+    start.title=isMulti&&role==="host"&&!opponentPresent?langText("lobby.waitingForOpponent","상대 참가자가 연결되면 시작할 수 있습니다."):"";
+    if(hostWhite&&hostBlack){
+      const hostColor=state.multiplayerHostColor==="b"?"b":"w";
+      hostWhite.classList.toggle("active",hostColor==="w");hostBlack.classList.toggle("active",hostColor==="b");
+      hostWhite.disabled=state.started||(Boolean(role)&&role!=="host");hostBlack.disabled=state.started||(Boolean(role)&&role!=="host");
+      hostWhite.setAttribute("aria-pressed",String(hostColor==="w"));hostBlack.setAttribute("aria-pressed",String(hostColor==="b"));
+    }
+    const hostActive=role==="host";
+    for(const id of ["lobbyCreateRoomBtn","lobbyJoinRoomBtn","lobbyWatchRoomBtn"]){const button=document.getElementById(id);if(button)button.disabled=hostActive;}
     window.EconomyUI.syncLobby();
-    const readonly=state.started||["guest","spectator"].includes(role);
+    document.querySelectorAll(".lobby-settings input:not([readonly]),.lobby-rules input:not(#lobbyKingCapture):not([readonly]),.lobby-economy-settings input,#economyPresetPanel button,#economyPresetPanel select,#economyPresetPanel input").forEach(input=>input.disabled=isMulti&&Boolean(role)&&role!=="host");
+    const readonly=state.started||(isMulti&&Boolean(role)&&role!=="host");
     document.getElementById("lobbyBoardSetup").disabled=readonly;
     document.getElementById("editCustomSetup").disabled=readonly;
   };
   const apply=()=>{
     const hostRole=multiplayerRole();
-    if(mode==="multi"&&hostRole==="guest")return;
+    if(mode==="multi"&&hostRole!=="host")return;
+    state.turn="w";state.turnNo=1;state.gameOver=false;state.gameResult=null;state.drawOffer=null;state.positionEval=null;
+    state.visits={};state.properties={};state.auctions=[];state.auctionSerial=0;
+    state.news=[];state.recentNewsIds=[];state.newsEventSerial=0;state.engineMoveSerial=0;state.engineAwarded=new Set();
+    for(const color of ["w","b"])state.players[color]=makePlayer(color);
     state.economyRules=window.EconomyUI.lobbyRules();
     state.setupMode=document.getElementById("lobbyBoardSetup").value;
     if(state.setupMode==="custom"){
@@ -581,8 +629,9 @@ function setupLobby(){
   };
   const begin=()=>{
     const role=multiplayerRole();
-    if(mode==="multi"&&!role)return;
-    if((mode!=="multi"&&!role)||(mode==="multi"&&!["guest","spectator"].includes(role)))if(apply()===false)return;
+    if(mode==="multi"&&role!=="host")return;
+    if(mode==="multi"&&!window.multiplayer?.opponentPresent){update();return;}
+    if(mode!=="multi"||role==="host")if(apply()===false)return;
     if(!state.started){
       if(state.setupMode==="custom")log(langText("log.customStarted","커스텀 게임 시작. 백 초기 자금 {white} / 흑 초기 자금 {black}.",{white:fmt(state.players.w.money),black:fmt(state.players.b.money)}),"gold");
       else log(langText("log.gameStarted","게임 시작. 양측 킹 1개 + {money}.",{money:fmt(CFG.startMoney)}),"gold");
@@ -593,12 +642,20 @@ function setupLobby(){
     startTurnTimer();
     if(role==="host")window.multiplayer.sendState(serializeGameState());
   };
-  single.onclick=()=>{mode="single";renderInternet("offline");update();};
+  single.onclick=()=>{if(multiplayerRole())return;mode="single";renderInternet("offline");update();};
   multi.onclick=()=>{mode="multi";renderInternet(window.multiplayer?.status||"offline");update();};
   start.onclick=begin;
   document.getElementById("lobbyCreateRoomBtn")?.addEventListener("click",()=>window.multiplayer?.createRoom().catch(error=>{if(connection)connection.textContent=error.message;}));
   document.getElementById("lobbyJoinRoomBtn")?.addEventListener("click",()=>window.multiplayer?.joinRoom(document.getElementById("lobbyRoomCodeInput")?.value).catch(error=>{if(connection)connection.textContent=error.message;}));
   document.getElementById("lobbyWatchRoomBtn")?.addEventListener("click",()=>window.multiplayer?.watchRoom(document.getElementById("lobbyRoomCodeInput")?.value).catch(error=>{if(connection)connection.textContent=error.message;}));
+  hostWhite?.addEventListener("click",()=>{const role=multiplayerRole();if(role&&role!=="host"||state.started)return;state.multiplayerHostColor="w";update();if(role==="host")publishEconomyLobby();});
+  hostBlack?.addEventListener("click",()=>{const role=multiplayerRole();if(role&&role!=="host"||state.started)return;state.multiplayerHostColor="b";update();if(role==="host")publishEconomyLobby();});
+  document.getElementById("lobbyLeaveRoomBtn")?.addEventListener("click",()=>window.multiplayer?.leave());
+  document.getElementById("lobbyCopyRoomCodeBtn")?.addEventListener("click",async()=>{
+    const code=window.multiplayer?.code;if(!code)return;
+    try{await navigator.clipboard.writeText(code);if(roomStatus)roomStatus.textContent=langText("network.codeCopied","방 코드 {code}를 복사했습니다.",{code});}
+    catch(_){const input=document.getElementById("lobbyRoomCodeInput");if(input){input.value=code;input.select();document.execCommand("copy");if(roomStatus)roomStatus.textContent=langText("network.codeCopied","방 코드 {code}를 복사했습니다.",{code});}}
+  });
   const renderInternet=status=>{
     if(!internet)return;
     const key=["room","waiting"].includes(status)?"connected":status;
@@ -613,6 +670,7 @@ function setupLobby(){
     if(multiplayerRole()==="host"&&!state.started)publishEconomyLobby();
   };
   window.addEventListener("game-language-change",()=>{renderInternet(window.multiplayer?.status||"offline");update();});
+  window.addEventListener("multiplayer-host-color-change",update);
   renderInternet(window.multiplayer?.status||"offline");
   update();
 }
@@ -774,7 +832,7 @@ function isKingLike(p){const def=p?.specialId?specialDef(p.specialId):null;retur
 function legacyPieceVisual(p){return pieceVisual(p);}
 function pieceViewerColor(){
   const role=multiplayerRole();
-  return role==="guest"?"b":role==="host"?"w":role==="spectator"?null:state.turn;
+  return role==="host"||role==="guest"?multiplayerColorForRole(role):role==="spectator"?null:state.turn;
 }
 function pieceVisual(p){
   const def=pieceDef(p);
@@ -993,7 +1051,7 @@ function dropSquare(e,r,c){
   e.preventDefault();
   const from=state.dragFrom;
   const role=multiplayerRole();
-  if(!multiplayerOwnsSquare(from)||state.turn!==(role==="guest"?"b":role==="host"?"w":state.turn)){
+  if(!multiplayerOwnsSquare(from)||state.turn!==(role==="guest"||role==="host"?multiplayerColorForRole(role):state.turn)){
     state.dragFrom=null;rejectRemoteTurn();return;
   }
   const legal=state.legalTargets.some(x=>x.r===r&&x.c===c);
@@ -1097,12 +1155,12 @@ function clickSquare(r,c){
   const key=sqName(r,c);
 
   if(state.mode === "buy" || state.mode === "special-buy"){
-    if(multiplayerRole()==="guest"&&state.turn!=="b")return rejectRemoteTurn();
+    if(multiplayerRole()==="guest"&&state.turn!==multiplayerColorForRole("guest"))return rejectRemoteTurn();
     if(multiplayerRole()==="guest"){window.multiplayer.sendAction({type:"purchase",piece:state.pendingPiece,specialId:state.pendingSpecialId,r,c});return;}
     return finishPurchase(r,c);
   }
   if(state.mode === "teleport"){
-    if(multiplayerRole()==="guest"&&(state.turn!=="b"||!multiplayerOwnsSquare(state.selected)))return rejectRemoteTurn();
+    if(multiplayerRole()==="guest"&&(state.turn!==multiplayerColorForRole("guest")||!multiplayerOwnsSquare(state.selected)))return rejectRemoteTurn();
     if(multiplayerRole()==="guest"){window.multiplayer.sendAction({type:"teleport",selected:state.selected,r,c});return;}
     return finishTeleport(r,c);
   }
@@ -1120,7 +1178,7 @@ function clickSquare(r,c){
 
   const isLegal=state.legalTargets.some(x=>x.r===r&&x.c===c);
   if(state.selected && isLegal){
-    if(multiplayerRole()==="guest"&&state.turn==="b"&&multiplayerOwnsSquare(state.selected)){
+    if(multiplayerRole()==="guest"&&state.turn===multiplayerColorForRole("guest")&&multiplayerOwnsSquare(state.selected)){
       window.multiplayer.sendAction({type:"move",from:sqName(state.selected.r,state.selected.c),to:sqName(r,c)});
       return;
     }
@@ -1987,31 +2045,38 @@ function legacyStockfishGrade(result,context,loss){
 }
 function classifyMove(context,before,after){
   const loss=Math.max(0,before-after),gain=after-before,best=context.standardLegal&&after!==null&&String(context.bestmove||"").toLowerCase()===String(context.uci||"").toLowerCase();
+  if(context.forced)return {key:"forced",bonus:0,label:langText("grade.forced","강제수")};
   if(isBrilliantMove({context,before,after,loss,gain,best}))return {key:"brilliant",bonus:ENGINE_EVAL_CONFIG.brilliantBonus,label:langText("grade.brilliant","!! 탁월수")};
   if(best)return {key:"great",bonus:ENGINE_EVAL_CONFIG.bestBonus,label:langText("grade.great","! 훌륭한 수")};
-  if(loss<=ENGINE_EVAL_CONFIG.interestingMaxLoss)return {key:"interesting",bonus:0,label:langText("grade.interesting","!? 흥미로운 수")};
+  if(context.bestCandidateRank>0&&loss<=ENGINE_EVAL_CONFIG.goodMaxLoss)return {key:"excellent",bonus:ENGINE_EVAL_CONFIG.excellentBonus,label:langText("grade.excellent","아주 좋은 수")};
+  if(loss<=ENGINE_EVAL_CONFIG.excellentMaxLoss)return {key:"excellent",bonus:ENGINE_EVAL_CONFIG.excellentBonus,label:langText("grade.excellent","아주 좋은 수")};
+  if(loss<=ENGINE_EVAL_CONFIG.goodMaxLoss)return {key:"good",bonus:ENGINE_EVAL_CONFIG.goodBonus,label:langText("grade.good","좋은 수")};
+  if(loss<=ENGINE_EVAL_CONFIG.interestingMaxLoss)return {key:"interesting",bonus:ENGINE_EVAL_CONFIG.interestingBonus,label:langText("grade.interesting","!? 흥미로운 수")};
   if(loss<=ENGINE_EVAL_CONFIG.inaccuracyMaxLoss)return {key:"inaccuracy",bonus:0,label:langText("grade.inaccuracy","?! 부정확한 수")};
   if(loss<=ENGINE_EVAL_CONFIG.mistakeMaxLoss)return {key:"mistake",bonus:0,label:langText("grade.mistake","? 실수")};
   return {key:"blunder",bonus:0,label:langText("grade.blunder","?? 블런더")};
 }
 function stockfishGrade(result,context,loss){
-  if(result.key==="brilliant")return {label:"Brilliant",annotation:"!!"};
-  if(result.key==="great")return {label:"Great",annotation:"!"};
-  if(result.key==="interesting")return {label:"Interesting",annotation:"!?"};
-  if(result.key==="inaccuracy")return {label:"Inaccuracy",annotation:"?!"};
-  if(result.key==="mistake")return {label:"Mistake",annotation:"?"};
-  return {label:"Blunder",annotation:"??"};
+  const grades={
+    forced:["Forced",langText("grade.forced","강제수"),"→"],brilliant:["Brilliant",langText("grade.brilliant","!! 탁월수"),"!!"],
+    great:["Great",langText("grade.great","! 훌륭한 수"),"!"],excellent:["Excellent",langText("grade.excellent","아주 좋은 수"),""],
+    good:["Good",langText("grade.good","좋은 수"),""],interesting:["Interesting",langText("grade.interesting","!? 흥미로운 수"),"!?"],
+    inaccuracy:["Inaccuracy",langText("grade.inaccuracy","?! 부정확한 수"),"?!"],mistake:["Mistake",langText("grade.mistake","? 실수"),"?"],
+    blunder:["Blunder",langText("grade.blunder","?? 블런더"),"??"],unrated:["Unrated",langText("grade.unrated","미평가"),""]
+  };
+  const [label,display,annotation]=grades[result.key]||grades.unrated;return {label,display,annotation};
 }
 function annotateMoveLog(context,symbol){
   if(!context.moveLogEl||!symbol)return;
   if(!context.moveLogEl.textContent.endsWith(` ${symbol}`))context.moveLogEl.textContent+=` ${symbol}`;
 }
 const MOVE_GRADE_VFX={
-  brilliant:{className:"brilliant",title:"BRILLIANT",symbol:"!!",duration:1800,particles:20,defaultBonus:180,variants:["sunburst","slash","crown","nova","orbit"]},
-  best:{className:"best",title:"BEST MOVE",symbol:"",duration:1400,particles:9,defaultBonus:80,variants:["ripple","sweep","orbit","pulse"]},
-  interesting:{className:"interesting",title:"INTERESTING",symbol:"!?",duration:1000,particles:5,defaultBonus:0,variants:["sweep","fork","orbit"]},
-  excellent:{className:"excellent",title:"EXCELLENT",symbol:"",duration:1100,particles:5,defaultBonus:0,variants:["sweep"]},
-  good:{className:"good",title:"GOOD",symbol:"",duration:900,particles:3,defaultBonus:30,variants:["pulse"]},
+  brilliant:{className:"brilliant",title:"BRILLIANT",symbol:"!!",duration:1800,particles:20,defaultBonus:600,variants:["sunburst","slash","crown","nova","orbit"]},
+  best:{className:"best",title:"BEST MOVE",symbol:"",duration:1400,particles:9,defaultBonus:300,variants:["ripple","sweep","orbit","pulse"]},
+  forced:{className:"forced",title:"FORCED MOVE",symbol:"→",duration:1050,particles:3,defaultBonus:0,variants:["pulse","sweep"]},
+  interesting:{className:"interesting",title:"INTERESTING",symbol:"!?",duration:1000,particles:5,defaultBonus:40,variants:["sweep","fork","orbit"]},
+  excellent:{className:"excellent",title:"EXCELLENT",symbol:"",duration:1100,particles:5,defaultBonus:180,variants:["sweep"]},
+  good:{className:"good",title:"GOOD",symbol:"",duration:900,particles:3,defaultBonus:100,variants:["pulse"]},
   inaccuracy:{className:"inaccuracy",title:"INACCURACY",symbol:"?!",duration:850,particles:2,defaultBonus:0,variants:["wobble","glitch","flash"]},
   mistake:{className:"mistake",title:"MISTAKE",symbol:"?",duration:1000,particles:1,defaultBonus:0,variants:["drop","tilt","crack"]},
   blunder:{className:"blunder",title:"BLUNDER",symbol:"??",duration:1200,particles:2,defaultBonus:0,variants:["impact","quake","vignette"]},
@@ -2104,20 +2169,14 @@ function debugStockfishMoveEval(data){
 }
 function fallbackStockfishGrade(context,reason,capturedPiece){
   if(state.engineRevision!==context.revision||state.engineAwarded.has(context.moveId))return;
-  const board=context.afterBoard||[];
-  const ownKing=board.flat().some(piece=>piece&&piece.color===context.mover&&isKingLike(piece));
-  const enemyKing=board.flat().some(piece=>piece&&piece.color===enemyColor(context.mover)&&isKingLike(piece));
-  let grade="Interesting",annotation="!?",bonus=0;
-  if(!ownKing){grade="Blunder";annotation="??";}
-  else if(!enemyKing){grade="Brilliant";annotation="!!";bonus=ENGINE_EVAL_CONFIG.brilliantBonus;}
-  else if(context.info.check||capturedPiece){grade="Good";annotation="";bonus=context.info.capture?ENGINE_EVAL_CONFIG.goodBonus:0;}
-  showMoveGradeEffect({grade,bonus,square:context.square,moveId:context.moveId});
-  annotateMoveLog(context,`${grade}${annotation?` ${annotation}`:""}`);
-  log(langText("log.approxEvaluation","근사 판정: {v0} · {v1}",{v0:grade,v1:reason}));
-  if(bonus){state.engineAwarded.add(context.moveId);state.players[context.mover].money+=bonus;log(langText("log.gradeBonus","{v0} 보너스 +{v1}",{v0:grade,v1:fmt(bonus)}),"gold");render();}
+  state.positionEval={status:"unrated",reason:String(reason||"analysis unavailable").slice(0,100),rootSide:enemyColor(context.mover),depth:0,lines:[],moveId:context.moveId,gradeKey:"Unrated",bonus:0,square:context.square};
+  showMoveGradeEffect({grade:"Unrated",square:context.square,moveId:context.moveId});
+  annotateMoveLog(context,"Unrated");
+  log(langText("log.unrated","수 평가: 미평가 · Stockfish 분석을 완료하지 못했습니다."));
+  render();
 }
 async function evaluateMoveWithStockfish(context){
-  if(state.stockfishEnabled===false)return;
+  if(state.stockfishEnabled===false){fallbackStockfishGrade(context,"Stockfish evaluation disabled");return;}
   const playerUci=String(context.uci||"").toLowerCase();
   const from=fromName(playerUci.slice(0,2)),to=fromName(playerUci.slice(2,4));
   const movingPiece=context.beforeBoard?.[from.r]?.[from.c]||null;
@@ -2134,11 +2193,11 @@ async function evaluateMoveWithStockfish(context){
   const enemyKingPresent=context.afterBoard?.flat().some(piece=>piece&&piece.color===enemyColor(context.mover)&&isKingLike(piece));
   if(!enemyKingPresent){fallbackStockfishGrade(context,"king captured",capturedPiece);return;}
   try{
-    const beforeResult=await stockfish.analyze(beforePosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: before analysis (${error?.message||"unknown"})`);return null;});
+    const beforeResult=await stockfish.analyze(beforePosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,multiPV:ENGINE_EVAL_CONFIG.multiPV,timeout:30000}).catch(error=>{debugSkipped(`failed: before analysis (${error?.message||"unknown"})`);return null;});
     if(!beforeResult){fallbackStockfishGrade(context,"before analysis failed",capturedPiece);return;}
     if(!beforeResult.valid){fallbackStockfishGrade(context,beforeResult.invalidReason||"invalid before analysis",capturedPiece);return;}
     if(state.engineRevision!==context.revision){debugSkipped("skipped: stale move revision");return;}
-    const playedResult=await stockfish.analyze(afterPosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,timeout:20000}).catch(error=>{debugSkipped(`failed: played analysis (${error?.message||"unknown"})`);return null;});
+    const playedResult=await stockfish.analyze(afterPosition.fen,{depth:ENGINE_EVAL_CONFIG.depth,multiPV:ENGINE_EVAL_CONFIG.multiPV,timeout:30000}).catch(error=>{debugSkipped(`failed: played analysis (${error?.message||"unknown"})`);return null;});
     if(!playedResult){fallbackStockfishGrade(context,"played analysis failed",capturedPiece);return;}
     if(!playedResult.valid){fallbackStockfishGrade(context,playedResult.invalidReason||"invalid played analysis",capturedPiece);return;}
     if(state.engineRevision!==context.revision||state.engineAwarded.has(context.moveId)){debugSkipped("skipped: stale or already awarded");return;}
@@ -2147,35 +2206,80 @@ async function evaluateMoveWithStockfish(context){
     if(before===null||after===null){fallbackStockfishGrade(context,"score normalization failed",capturedPiece);return;}
     context.bestmove=beforeResult.bestmove;
     context.standardLegal=Boolean(context.info.movingIsStandard&&standardLegal);
+    const beforeLines=Array.isArray(beforeResult.lines)?beforeResult.lines:[];
+    context.bestCandidateRank=beforeLines.findIndex(line=>String(line.pv?.[0]||"").toLowerCase()===playerUci);
+    context.forced=context.standardLegal&&beforeLines.length===1&&String(beforeLines[0].pv?.[0]||"").toLowerCase()===playerUci;
+    const playedLines=(Array.isArray(playedResult.lines)&&playedResult.lines.length?playedResult.lines:[{score:playedResult.score,pv:playedResult.bestmove?[playedResult.bestmove]:[]}]).slice(0,ENGINE_EVAL_CONFIG.multiPV);
+    state.positionEval={status:"rated",rootSide:rootSidePlayed,turnNo:state.turnNo,depth:Number(playedResult.depth)||0,lines:playedLines.map(line=>({score:line.score||playedResult.score,pv:(Array.isArray(line.pv)?line.pv:[]).slice(0,12)})),moveId:context.moveId,square:context.square};
     context.centipawnLoss=Math.max(0,before-after);
     context.movingMaterial=movingPiece?pieceScore(movingPiece):0;
     context.capturedMaterial=capturedPiece?pieceScore(capturedPiece):0;
     context.moverMaterialDelta=materialAfter[context.mover]-materialBefore[context.mover];
     context.freeCapture=materialAfter[enemyColor(context.mover)]<materialBefore[enemyColor(context.mover)]&&context.moverMaterialDelta>=0;
-    const nonKingPieces=Object.values(materialBefore).reduce((sum,value)=>sum+value,0);
-    context.bonusEligible=nonKingPieces>=3||context.info.capture||context.info.check;
+    context.bonusEligible=true;
     const result=classifyMove(context,before,after);
     const grade=stockfishGrade(result,context,Math.max(0,before-after));
-    result.label=grade.label;
+    result.label=grade.display;
     result.bonus=Math.round(result.bonus*(0.5+0.5*context.confidence));
     const stockfishBestmove=String(context.bestmove||"").toLowerCase();
     const bestmoveMatch=Boolean(playerUci&&stockfishBestmove===playerUci);
     if(!context.bonusEligible)result.bonus=0;
+    state.positionEval.gradeKey=grade.label;state.positionEval.bonus=result.bonus;
     debugStockfishMoveEval({beforeFen:beforePosition.fen,playerUci,stockfishBestmove,bestmoveMatch,rawBestScore:beforeResult.score,rawPlayedScore:playedResult.score,rootSideBefore,rootSidePlayed,normalizedBestScore:before,normalizedPlayedScore:after,moverColor:context.mover,bestScoreMoverPOV:before,playedScoreMoverPOV:after,centipawnLoss:context.centipawnLoss,movingPiece:stockfishPieceLabel(movingPiece),capturedPiece:stockfishPieceLabel(capturedPiece),materialBefore,materialAfter,confidence:context.confidence,analysisValid:true,invalidReason:null,standardLegal,bonusEligible:context.bonusEligible,classification:grade.label,bonus:result.bonus});
     if(grade.label==="Brilliant")playSound("brilliant");
     showMoveGradeEffect({grade:grade.label,bonus:result.bonus,square:context.square,moveId:context.moveId});
-    annotateMoveLog(context,`${grade.label}${grade.annotation?` ${grade.annotation}`:""}`);
+    annotateMoveLog(context,`${grade.display}${grade.annotation?` ${grade.annotation}`:""}`);
     if(!result.bonus){
       log(langText("log.engineEvaluation","Stockfish 판정: {v0} · {v1}",{v0:result.label,v1:stockfishPositionAdapter.confidenceLabel(context.confidence)}));
-      return;
+      render();return;
     }
     state.engineAwarded.add(context.moveId);state.players[context.mover].money+=result.bonus;
     log(langText("log.engineBonus","{v0} — +{v1} · 신뢰도 {v2}",{v0:result.label,v1:fmt(result.bonus),v2:stockfishPositionAdapter.confidenceLabel(context.confidence)}),"gold");render();
   }catch(error){fallbackStockfishGrade(context,`analysis failed: ${error?.message||"Worker error"}`,capturedPiece);}
 }
 
+function formatEvaluationScore(score,rootSide){
+  const whiteScore=normalizeScoreToColor(score,rootSide,"w");if(whiteScore===null)return langText("evaluation.unknown","평가 없음");
+  if(score?.type==="mate"){
+    const winner=whiteScore>=0?"w":"b";
+    return langText("evaluation.mate","M{moves} · {side} 메이트",{moves:Math.abs(Number(score.value)||0),side:sideName(winner)});
+  }
+  const pawns=whiteScore/100;
+  if(Math.abs(whiteScore)<10)return langText("evaluation.even","균형 {score}",{score:`${pawns>=0?"+":""}${pawns.toFixed(2)}`});
+  return langText("evaluation.score","{side} +{score}",{side:sideName(pawns>0?"w":"b"),score:Math.abs(pawns).toFixed(2)});
+}
+function formatEvaluationVariation(pv,rootSide,turnNo){
+  let side=rootSide,moveNumber=Math.max(1,Number(turnNo)||1);
+  return (Array.isArray(pv)?pv:[]).slice(0,12).map((uci,index)=>{
+    const move=String(uci||"").toLowerCase();if(!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move))return "";
+    const prefix=side==="w"?`${moveNumber}. `:index===0?`${moveNumber}... `:"";
+    const text=`${move.slice(0,2)}–${move.slice(2,4)}${move[4]?`=${move[4].toUpperCase()}`:""}`;
+    if(side==="b")moveNumber++;side=enemyColor(side);return prefix+text;
+  }).filter(Boolean).join(" ");
+}
+function renderPositionEvaluation(){
+  const panel=document.getElementById("positionEvaluation"),summary=document.getElementById("positionEvalSummary"),depth=document.getElementById("positionEvalDepth"),list=document.getElementById("positionEvalLines");
+  if(!panel||!summary||!depth||!list)return;
+  panel.hidden=!state.started;list.replaceChildren();
+  const evaluation=state.positionEval;
+  if(!evaluation||evaluation.status!=="rated"){
+    summary.textContent=langText("evaluation.unrated","미평가");depth.textContent="";return;
+  }
+  const lines=Array.isArray(evaluation.lines)?evaluation.lines:[];
+  summary.textContent=lines.length?formatEvaluationScore(lines[0].score,evaluation.rootSide):langText("evaluation.unrated","미평가");
+  depth.textContent=evaluation.depth?langText("evaluation.depth","깊이 {depth}",{depth:evaluation.depth}):"";
+  lines.slice(0,ENGINE_EVAL_CONFIG.multiPV).forEach((line,index)=>{
+    const item=document.createElement("li"),rank=document.createElement("small"),score=document.createElement("b"),variation=document.createElement("span");
+    rank.textContent=`${index+1}.`;
+    score.textContent=formatEvaluationScore(line.score,evaluation.rootSide);
+    variation.textContent=formatEvaluationVariation(line.pv,evaluation.rootSide,evaluation.turnNo||state.turnNo);
+    item.append(rank,score,variation);list.appendChild(item);
+  });
+}
+
 function render(){
   state.kingDangerTargets=state.selected?kingDangerTargetsFor(state.selected.r,state.selected.c):[];
+  renderPositionEvaluation();
   document.querySelectorAll(".square").forEach(el=>{
     const r=Number(el.dataset.r),c=Number(el.dataset.c),p=state.board[r][c],key=sqName(r,c);
     el.classList.remove("selected","legal","capture","buy-target","teleport-target","in-check","king-danger","dragging");
@@ -2226,6 +2330,7 @@ function render(){
   document.getElementById("insuranceStatus").textContent=langText("insurance.status","백 보험: {white} · 흑 보험: {black}",{white:langText(w.insurance?"insurance.owned":"insurance.none",w.insurance?"보유":"없음"),black:langText(b.insurance?"insurance.owned":"insurance.none",b.insurance?"보유":"없음")});
   updateDrawButton();
   const orbitalBtn=document.getElementById("orbitalStrikeBtn"),orbitalStatus=document.getElementById("orbitalStatus"),orbitalReady=orbitalStrikeReady();
+  const orbitalHint=orbitalBtn?.querySelector("small");if(orbitalHint)orbitalHint.textContent=langText("special.orbitalHint","{amount} · 턴 AP 전체",{amount:fmt(CFG.orbitalStrike.price)});
   const orbitalReason=orbitalReady.reason;
   if(orbitalBtn){orbitalBtn.disabled=!orbitalReady.ok||state.mode==="orbital-targeting"||state.gameOver;orbitalBtn.title=orbitalReady.ok?langText("orbital.connecting","궤도 플랫폼 접속"):langText("orbital.unavailable","궤도 빔 사용 불가: {reason}",{reason:orbitalReason});}
   if(orbitalStatus)orbitalStatus.textContent=state.mode==="orbital-targeting"?langText("orbital.targeting","조준 중 · 클릭 발사 / ESC·우클릭 취소"):orbitalReady.ok?langText("orbital.ready","궤도 플랫폼 접속 가능"):orbitalReason;

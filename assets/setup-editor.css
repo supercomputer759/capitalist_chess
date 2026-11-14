@@ -12,6 +12,7 @@
 .setup-square.light{background:#ded9cc}.setup-square.dark{background:#7b836e}
 .setup-square>.piece{width:82%;height:82%}.setup-square .special-piece-chess{width:90%;height:94%}
 .setup-tools{display:flex;flex-direction:column;gap:9px}.setup-tools label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.setup-color-label{font-size:12px}.setup-color-picker{display:grid;grid-template-columns:1fr 1fr;gap:6px}.setup-tools .setup-color-button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:4px 8px}.setup-color-button.active{outline:3px solid #b58a2b;outline-offset:-3px;background:#fff8df}.setup-color-preview{display:grid;place-items:center;width:28px;height:30px}.setup-color-preview img{width:100%;height:100%;object-fit:contain}.setup-color-name{font-size:12px;font-weight:800}.setup-palette img{transition:filter .12s ease}
 .setup-palette{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
 .setup-palette button{min-width:0;height:49px;display:grid;place-items:center;padding:2px}
 .setup-palette button.active,.setup-tools>button.active{outline:3px solid #b58a2b;outline-offset:-3px}

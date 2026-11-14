@@ -106,7 +106,7 @@
   function send(op, data = {}) {
     if (host.role() === "guest") return window.multiplayer.sendAction({ type: "economyExpansion", op, ...data });
     if (host.role() === "spectator") return;
-    host.action(host.role() === "host" ? "w" : host.state.turn, { op, ...data });
+    host.action(host.role() === "host" ? ownColor() : host.state.turn, { op, ...data });
   }
   function handleClick(event) {
     const button = event.target.closest("button[data-econ-op]"); if (!button) return;
@@ -125,7 +125,7 @@
     }
     send(op);
   }
-  function ownColor() { return host.role() === "guest" ? "b" : host.role() === "host" ? "w" : host.state.turn; }
+  function ownColor() { return window.multiplayerColorForRole?.(host.role()) || host.state.turn; }
   function render() {
     if (!host) return;
     syncLobby();

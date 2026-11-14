@@ -41,6 +41,7 @@ button,input,select{font:inherit}
 button{border:1px solid var(--line);background:#f4f1e9;color:var(--text);border-radius:11px;padding:9px 11px;cursor:pointer;transition:.14s transform,.14s background,.14s border-color,.14s box-shadow}
 button:hover:not(:disabled){transform:translateY(-1px);background:#fffdf7;border-color:var(--line-strong);box-shadow:0 5px 14px rgba(70,64,52,.08)}
 button:disabled{opacity:.42;cursor:not-allowed}
+.lobby-host-color{display:flex;align-items:center;gap:7px;margin-bottom:9px;font-size:11px;color:var(--muted)}.lobby-host-color span{margin-right:4px}.lobby-host-color button{padding:7px 12px}.lobby-host-color button.active{border-color:var(--gold);background:#fff7df;color:#3d2e0e;box-shadow:inset 0 0 0 1px rgba(181,138,43,.3)}.lobby-room-actions{flex-wrap:wrap}.lobby-room-actions button{flex:0 0 auto}
 button.primary{background:linear-gradient(135deg,#d7b65e,#bd9130);color:#2d2411;border-color:#b68a28;font-weight:900;box-shadow:0 6px 15px rgba(181,138,43,.18)}
 button.ghost{background:transparent}.wide{width:100%}
 .app-shell{height:100dvh;max-width:1800px;margin:0 auto;padding:14px 16px 10px;display:flex;flex-direction:column;overflow:hidden}
@@ -280,6 +281,14 @@ footer{display:block}
   flex-direction:column;
 }
 .workspace .board-info .tile-info{overflow:auto;min-height:0;flex:1}
+.position-evaluation{flex:0 0 auto;max-height:185px;overflow:auto;border-top:1px solid var(--line);padding-top:7px;margin-top:4px;font-size:10px}
+.position-evaluation-head{display:flex;justify-content:space-between;gap:8px;color:var(--muted)}
+.position-evaluation-summary{font-size:12px;font-weight:900;margin:4px 0;color:var(--gold)}
+.position-evaluation-lines{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.position-evaluation-lines li{display:grid;grid-template-columns:14px auto minmax(0,1fr);gap:4px;align-items:start;padding:4px 5px;border-radius:6px;background:rgba(245,243,236,.88)}
+.position-evaluation-lines li small{color:var(--muted);font-variant-numeric:tabular-nums}
+.position-evaluation-lines li b{white-space:nowrap;color:#5b6a84;font-variant-numeric:tabular-nums}
+.position-evaluation-lines li span{overflow-wrap:anywhere;line-height:1.35}
 .workspace .board-info .button-row{margin-top:10px;flex-direction:column;flex:0 0 auto}
 .workspace .bottom-log{
   grid-column:1/3;
@@ -358,6 +367,7 @@ footer{display:block}
 .grade-brilliant.variant-slash .vfx-streaks,.grade-brilliant.variant-crown .vfx-streaks{opacity:1;background:linear-gradient(45deg,transparent 42%,rgba(255,216,100,.85) 49%,transparent 52%),linear-gradient(-45deg,transparent 42%,rgba(255,155,30,.8) 49%,transparent 52%);animation:vfxStreak 1.2s ease-out both}
 .grade-brilliant.variant-crown .vfx-streaks{background:radial-gradient(ellipse at 50% 0,rgba(255,217,80,.9),transparent 30%);animation:vfxCrown 1.4s ease-out both}
 .grade-best{color:#46e1c0}.grade-best .vfx-backdrop{background:rgba(8,55,65,.08);animation:vfxBackdrop 1.4s ease-out both}.grade-best .vfx-title{color:#8affec;text-shadow:0 0 22px #18bba5;animation:bestCinematic 1.4s ease-out both}.grade-best .vfx-bonus{color:#55e4c6;animation:vfxBonus 1.4s ease-out both}.grade-best .vfx-ring{animation:vfxRing 1.2s ease-out both}.grade-best .vfx-particle{color:#64e8d0}.grade-best.variant-sweep .vfx-streaks{opacity:1;background:linear-gradient(90deg,transparent,rgba(60,225,200,.55),transparent);animation:vfxSweep 1.2s ease-out both}
+.grade-forced{color:#69b8ff}.grade-forced .vfx-title{color:#bde5ff;text-shadow:0 0 16px #218cff,0 0 42px #1363c9;font-size:clamp(28px,5vw,72px);animation:forcedSnap 1.05s cubic-bezier(.16,.8,.25,1) both}.grade-forced .vfx-symbol{color:#fff;text-shadow:0 0 22px #4ca9ff;animation:vfxRing 1s ease-out both}.grade-forced .vfx-backdrop{background:rgba(15,62,120,.1);animation:vfxBackdrop 1.05s ease-out both}.grade-forced .vfx-ring{animation:vfxRing 1s ease-out both}
 .grade-excellent{color:#a987ff}.grade-excellent .vfx-title{color:#d0bdff;text-shadow:0 0 25px #6e4fd4;animation:excellentCross 1.1s ease-out both}.grade-excellent .vfx-streaks{opacity:1;background:linear-gradient(90deg,transparent 15%,rgba(135,100,255,.6),transparent 48%,rgba(70,175,255,.6),transparent 85%);animation:vfxSweep 1.1s ease-out both}.grade-interesting{color:#e0a9ff}.grade-interesting .vfx-title{color:#f2c7ff;text-shadow:0 0 16px #a75bdb;font-size:clamp(26px,4vw,56px);animation:excellentCross 1s ease-out both}
 .grade-good{color:#48d787}.grade-good .vfx-title{color:#8dffb9;text-shadow:0 0 18px #28bb69;font-size:clamp(30px,5vw,70px);animation:goodFloat .9s ease-out both}.grade-good .vfx-bonus{color:#75efa0;font-size:clamp(16px,2vw,28px);animation:vfxBonus .9s ease-out both}.grade-good .vfx-target{animation:goodPulse .9s ease-out both}.grade-good .vfx-ring{animation:vfxRing .8s ease-out both}.grade-good .vfx-particle{color:#58e28b}
 .grade-inaccuracy{color:#e8c84d}.grade-inaccuracy .vfx-title{color:#ffe992;font-size:clamp(24px,4vw,54px);animation:vfxWobble .85s ease-out both}.grade-mistake{color:#ef7445}.grade-mistake .vfx-title{color:#ff9a62;font-size:clamp(26px,4vw,60px);animation:vfxDrop 1s ease-out both}.grade-blunder{color:#ef3d4f}.grade-blunder .vfx-backdrop{background:rgba(65,0,8,.25);animation:blunderFlash 1.2s ease-out both}.grade-blunder .vfx-title{color:#ff5362;text-shadow:0 0 20px #b30018;font-size:clamp(30px,6vw,88px);animation:blunderImpact 1.2s ease-out both}.grade-unrated{color:#9da5af}.grade-unrated .vfx-title{font-size:clamp(20px,3vw,42px);letter-spacing:.18em;animation:vfxScan .85s steps(3,end) both}.grade-unrated .vfx-backdrop{background:rgba(100,110,120,.06);animation:vfxBackdrop .85s ease-out both}
@@ -365,6 +375,7 @@ footer{display:block}
 @keyframes vfxBackdrop{0%{opacity:0}20%{opacity:1}100%{opacity:0}}
 @keyframes vfxParticle{0%{opacity:0;transform:translate(-50%,-50%) scale(0) rotate(0)}18%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--x)),calc(-50% + var(--y))) scale(var(--scale)) rotate(var(--rotate))}}
 @keyframes vfxRing{0%{opacity:.9;transform:translate(-50%,-50%) scale(.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.5)}}
+@keyframes forcedSnap{0%{opacity:0;transform:translateY(26px) scale(.72)}24%{opacity:1;transform:translateY(0) scale(1.08)}68%{opacity:1;transform:scale(1)}100%{opacity:0;transform:translateY(-12px) scale(.96)}}
 @keyframes brilliantSymbol{0%{opacity:0;transform:scale(.3)}18%{opacity:1;transform:scale(1.3)}55%{transform:scale(1)}100%{opacity:0;transform:scale(1.25)}}
 @keyframes brilliantTitle{0%{opacity:0;transform:scale(.3)}22%{opacity:0;transform:scale(.3)}42%{opacity:1;transform:scale(1.15)}65%{transform:scale(1)}100%{opacity:0;transform:translateY(-12px) scale(1.04)}}
 @keyframes vfxBonus{0%,20%{opacity:0;transform:translateY(16px)}42%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-28px)}}
