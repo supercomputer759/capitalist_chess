@@ -3,3 +3,4 @@ server/.wrangler/
 server/.npm-cache/
 server/.dev.vars
 server/.env
+/debug.log
