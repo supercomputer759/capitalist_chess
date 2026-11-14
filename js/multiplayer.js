@@ -16,7 +16,7 @@
   const SESSION_KEY="capitalistChessMultiplayerSession";
   class MultiplayerClient{
     constructor(){
-      this.socket=null;this.role=null;this.code="";this.token="";this.status="offline";this.stateRevision=0;
+      this.socket=null;this.role=null;this.code="";this.token="";this.status="offline";this.stateRevision=0;this.pendingEntry=null;
       this.onStatus=null;this.onAction=null;this.onState=null;this.onChat=null;this.reconnectTimer=null;this.reconnectAttempt=0;this.intentionalDisconnect=false;this.reconnecting=false;this.heartbeatTimer=null;this.lastHeartbeatAck=0;
       this.restoreSession();
     }
@@ -54,7 +54,7 @@
     resetConnection(){
       this.intentionalDisconnect=true;this.cancelReconnect();this.stopHeartbeat();
       if(this.socket){this.socket.onclose=null;this.socket.onmessage=null;this.socket.close();this.socket=null;}
-      this.clearSession();
+      this.clearSession();this.pendingEntry=null;
     }
     async createRoom(){
       this.resetConnection();let createToken;
@@ -66,7 +66,7 @@
       }
       await this.connect();this.send({type:"create",createToken,state:window.serializeGameState?.()||null,revision:window.gameState?.engineRevision||0});
     }
-    async joinRoom(code){this.resetConnection();this.code=String(code||"").trim().toUpperCase();if(!this.code)throw new Error(text("network.codeRequired","방 코드를 입력해줘."));await this.connect();this.send({type:"join",code:this.code});}
+    async joinRoom(code){this.resetConnection();this.pendingEntry="join";this.code=String(code||"").trim().toUpperCase();if(!this.code)throw new Error(text("network.codeRequired","방 코드를 입력해줘."));await this.connect();this.send({type:"join",code:this.code});}
     async watchRoom(code){this.resetConnection();this.code=String(code||"").trim().toUpperCase();if(!this.code)throw new Error(text("network.codeRequired","방 코드를 입력해줘."));await this.connect();this.send({type:"watch",code:this.code});}
     sendAction(action){if(this.role!=="guest")return false;this.send({type:"action",action});return true;}
     sendChat(text){const value=String(text||"").trim().slice(0,200);if(!value||!this.code||!this.token||this.socket?.readyState!==1)return false;this.send({type:"chat",text:value});return true;}
@@ -81,6 +81,7 @@
       let message;try{message=JSON.parse(raw);}catch(_){return;}
       if(message.type==="heartbeatAck"){this.lastHeartbeatAck=Number(message.at||Date.now());return;}
       if(message.type==="roomCreated"||message.type==="joined"||message.type==="watched"||message.type==="reconnected"){
+        this.pendingEntry=null;
         this.code=message.code||this.code;this.token=message.token||this.token;this.role=message.role||this.role;this.stateRevision=Number(message.revision||this.stateRevision);this.reconnecting=false;this.reconnectAttempt=0;this.saveSession();this.setStatus("room",`${this.code} · ${this.role}`);this.updateRoomUI();
         if(message.state)this.onState?.(message.state,this.stateRevision);
         return;
@@ -99,6 +100,9 @@
       if(message.type==="chat"){this.onChat?.(message);return;}
       if(message.type==="spectatorCount"){this.setStatus("room",text("network.spectatorCount","관전자 {count}명",{count:message.count||0}));return;}
       if(message.type==="error"){
+        if(this.pendingEntry==="join"&&!this.token&&message.message==="Room is full or waiting for reconnect"){
+          this.pendingEntry="watch";this.send({type:"watch",code:this.code});return;
+        }
         const detail=message.message||text("network.multiplayerError","멀티플레이 오류");
         if(this.reconnecting&&["Room not found","Reconnect session not found","Session expired"].includes(message.message)){
           this.intentionalDisconnect=true;this.cancelReconnect();this.stopHeartbeat();this.socket?.close();this.clearSession();

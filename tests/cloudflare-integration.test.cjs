@@ -24,10 +24,11 @@ test('Workers HTTP: 상태 확인·CORS·잘못된 경로 거부',async()=>{
   const health=await fetch(base+'/health');assert.equal((await health.json()).placement,'automatic');assert.equal(health.headers.get('access-control-allow-origin'),'*');
   assert.equal((await fetch(base+'/rooms',{method:'OPTIONS'})).status,204);assert.equal((await fetch(base+'/reserve',{method:'POST'})).status,404);
 });
-test('실제 연결 3개: 방 생성·참가·관전·상태·행동·채팅·궤도 타격 중계',async t=>{
+test('실제 연결 4개: 정원 초과 관전·명시적 관전·상태·행동·채팅 중계',async t=>{
   const {code,host}=await hosted(t),guest=await socket(t,code),watcher=await socket(t,code);
   guest.send({type:'join',code});assert.equal((await guest.next('joined')).state.turn,'w');await host.next('guestJoined');
-  watcher.send({type:'watch',code});assert.equal((await watcher.next('watched')).role,'spectator');assert.equal((await host.next('spectatorCount')).count,1);
+  watcher.send({type:'join',code});assert.equal((await watcher.next('watched')).role,'spectator');assert.equal((await host.next('spectatorCount')).count,1);
+  const explicit=await socket(t,code);explicit.send({type:'watch',code});assert.equal((await explicit.next('watched')).role,'spectator');assert.equal((await host.next('spectatorCount')).count,2);
   host.send({type:'state',state:{turn:'b',king:'chaebol_king'},revision:2});assert.equal((await guest.next('state')).state.king,'chaebol_king');assert.equal((await watcher.next('state')).revision,2);
   guest.send({type:'action',action:{type:'pieceAbility',id:'paid_same_color_warp'}});assert.equal((await host.next('action')).action.id,'paid_same_color_warp');
   watcher.send({type:'chat',text:'hello'});assert.equal((await guest.next('chat')).from,'spectator');
@@ -57,8 +58,9 @@ test('게임의 실제 MultiplayerClient 소스로 방 생성·참가·행동 �
   function roomReady(client){return new Promise((resolve,reject)=>{
     const timer=setTimeout(()=>reject(Error('Client room timeout')),15000);client.onStatus=status=>{if(status.status==='room'){clearTimeout(timer);resolve();}else if(status.status==='error'){clearTimeout(timer);reject(Error(status.detail));}};
   });}
-  const host=client(),guest=client();const created=roomReady(host);await host.createRoom();await created;assert.equal(host.role,'host');
+  const host=client(),guest=client(),watcher=client();const created=roomReady(host);await host.createRoom();await created;assert.equal(host.role,'host');
   const joined=roomReady(guest);await guest.joinRoom(host.code);await joined;assert.equal(guest.role,'guest');
+  const watching=roomReady(watcher);await watcher.joinRoom(host.code);await watching;assert.equal(watcher.role,'spectator');assert.equal(watcher.sendAction({type:'draw'}),false);
   const received=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Action timeout')),8000);host.onAction=action=>{clearTimeout(timer);resolve(action);};});
   guest.sendAction({type:'move',from:'e2',to:'e4'});assert.equal((await received).to,'e4');
 });

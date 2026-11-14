@@ -169,7 +169,11 @@ export class ChessRoom extends DurableObject {
       }
       if (!room.hostToken) return send(ws, {type: "error", message: "Room not found"});
       if (message.type === "join") {
-        if (room.guestToken) return send(ws, {type: "error", message: "Room is full or waiting for reconnect"});
+        if (room.guestToken) {
+          const token = crypto.randomUUID(); this.attach(ws, "spectator", token);
+          this.replySession(ws, "watched", "spectator", token);
+          this.broadcast({type: "spectatorCount", count: this.sockets("spectator").length}, false); return;
+        }
         room.guestToken = crypto.randomUUID(); this.attach(ws, "guest", room.guestToken);
         await this.save(); this.replySession(ws, "joined", "guest", room.guestToken);
         send(this.peer("host"), {type: "guestJoined"}); return;

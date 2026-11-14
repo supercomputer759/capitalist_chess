@@ -64,3 +64,11 @@ test('잘못된 JSON·과대 메시지는 방을 깨뜨리지 않고 거부',asy
   const e=await hosted();await e.room.webSocketMessage(e.host,'{');assert.equal(e.host.messages.at(-1).message,'Invalid JSON');
   await e.room.webSocketMessage(e.host,'a'.repeat(524289));assert.match(e.host.messages.at(-1).message,/large/);assert.equal(e.room.room.revision,1);
 });
+test('참가자가 찬 방·재접속 대기 방은 추가 입장을 관전으로 전환',async()=>{
+  const e=await hosted(),guest=e.socket();await e.room.handleMessage(guest,{type:'join'});const token=e.room.room.guestToken;
+  for(const disconnected of [false,true]){
+    if(disconnected){guest.close();await e.room.disconnected(guest);}
+    const watcher=e.socket();await e.room.handleMessage(watcher,{type:'join'});assert.equal(watcher.messages.at(-1).type,'watched');assert.equal(watcher.messages.at(-1).role,'spectator');assert.equal(e.room.room.guestToken,token);
+    const explicit=e.socket();await e.room.handleMessage(explicit,{type:'watch'});assert.equal(explicit.messages.at(-1).type,'watched');
+  }
+});

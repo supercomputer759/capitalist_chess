@@ -309,8 +309,9 @@ function applyGameState(snapshot){
   const wasGameOver=state.gameOver;state.gameOver=Boolean(snapshot.gameOver);state.gameResult=snapshot.gameResult||null;state.specialStock=snapshot.specialStock||{};state.specialRestockTurn=Number(snapshot.specialRestockTurn||0);state.clock=snapshot.clock||state.clock;state.drawOffer=snapshot.drawOffer||null;state.news=snapshot.news||[];state.recentNewsIds=snapshot.recentNewsIds||[];state.engineRevision=Number(snapshot.revision||0);state.engineAwarded=new Set();
   if(previousPriceMultiplier!==state.economyRules.priceMultiplier)buildShop();
   state.selected=null;state.legalTargets=[];state.mode=null;render();renderTurnTimer();
+  if(state.started)document.getElementById("lobbyScreen")?.classList.add("hidden");
   if(state.started&&!wasStarted){
-    document.getElementById("lobbyScreen")?.classList.add("hidden");startTurnTimer();
+    startTurnTimer();
     if(multiplayerRole()==="guest"){
       const automation=window.EconomyUI.initialAutomation("b");
       for(const key of Object.keys(window.EconomyRules.DEFAULT_AUTOMATION)){
@@ -380,7 +381,7 @@ window.handleMultiplayerAction=function(action){
   if(action.type==="orbitalStrike")return executeOrbitalStrike(action.target);
   if(state.turn!=="b")return;
   if(action.type==="endTurn")return endTurn();
-  if(action.type==="draw")return requestDraw();
+  if(action.type==="draw")return requestDrawFor("b");
   if(action.type==="purchase"){
     state.mode=action.specialId?"special-buy":"buy";state.pendingSpecialId=action.specialId||null;state.pendingPiece=action.piece||null;
     return finishPurchase(action.r,action.c);
@@ -420,6 +421,7 @@ window.handleMultiplayerAction=function(action){
 };
 function runMultiplayerAction(type,local,payload=()=>({})){
   return (...args)=>{
+    if(type==="draw"&&!canRequestDraw())return rejectRemoteTurn();
     if(multiplayerRole()==="guest"){window.multiplayer.sendAction({type,...payload(...args)});return;}
     if(multiplayerRole()==="spectator"){log(langText("notice.spectatorAction","관전자는 게임 행동을 할 수 없어."),"bad");return;}
     local(...args);
@@ -520,7 +522,7 @@ function setupLobby(){
     single.classList.toggle("active",!isMulti);
     multi.classList.toggle("active",isMulti);
     if(hubTitle)hubTitle.textContent=langText(isMulti?"lobby.multiHub":"lobby.hubTitle",isMulti?"\uba40\ud2f0\ud50c\ub808\uc774 \ud5c8\ube0c":"\uc2f1\uae00\ud50c\ub808\uc774 \ud5c8\ube0c");
-    if(connection)connection.textContent=isMulti?(role?langText("lobby.onlineRoom","\uc628\ub77c\uc778 \ubc29")+" | "+(role==="host"?"Host":"Guest"):langText("lobby.waitingRoom","\ubc29 \uc5f0\uacb0 \ub300\uae30")):langText("lobby.localGame","\ub85c\uceec \uac8c\uc784");
+    if(connection)connection.textContent=isMulti?(role?langText("lobby.onlineRoom","\uc628\ub77c\uc778 \ubc29")+" | "+(role==="spectator"?langText("network.spectatorLabel","Spectator · 관전자"):role==="host"?"Host":"Guest"):langText("lobby.waitingRoom","\ubc29 \uc5f0\uacb0 \ub300\uae30")):langText("lobby.localGame","\ub85c\uceec \uac8c\uc784");
     tools?.classList.toggle("hidden",!isMulti);
     start.textContent=langText(isMulti?"lobby.startMulti":"lobby.startSingle",isMulti?"\uba40\ud2f0\ud50c\ub808\uc774 \uc2dc\uc791":"\uc2f1\uae00\ud50c\ub808\uc774 \uc2dc\uc791");
     start.disabled=isMulti&&!role;
@@ -1862,8 +1864,18 @@ function startTurnTimer(){
 function stopTurnTimer(){
   if(state.turnTimerId){clearInterval(state.turnTimerId);state.turnTimerId=null;}
 }
-function requestDraw(){
-  if(state.gameOver)return;
+function canRequestDraw(color=pieceViewerColor()){
+  return state.started&&!state.gameOver&&["w","b"].includes(color)&&color===state.turn;
+}
+function updateDrawButton(){
+  const button=document.getElementById("drawBtn");if(!button)return;
+  const viewer=pieceViewerColor();
+  button.textContent=!state.drawOffer?langText("button.drawRequest","무승부 요청"):state.drawOffer===viewer?langText("button.drawCancel","요청 취소"):langText("button.drawAccept","무승부 승인");
+  button.disabled=!canRequestDraw();
+}
+function requestDraw(){return requestDrawFor(pieceViewerColor());}
+function requestDrawFor(color){
+  if(!canRequestDraw(color))return;
   playSound("select");
   const side=sideName(state.turn);
   if(!state.drawOffer){
@@ -2212,11 +2224,7 @@ function render(){
   const ventureButton=document.getElementById("ventureBtn");if(ventureButton){ventureButton.querySelector("b").textContent=langText("economy.ventureTitle","\ubca4\ucc98 \ud22c\uc790 {amount}",{amount:fmt(CFG.ventureAmount)});ventureButton.querySelector("small").textContent=langText("economy.ventureMaturity","3\ud134 \ub4a4 {minimum}~{maximum}\ubc30",{minimum:CFG.ventureMinReturn.toFixed(2),maximum:CFG.ventureMaxReturn.toFixed(2)});}
 
   document.getElementById("insuranceStatus").textContent=langText("insurance.status","백 보험: {white} · 흑 보험: {black}",{white:langText(w.insurance?"insurance.owned":"insurance.none",w.insurance?"보유":"없음"),black:langText(b.insurance?"insurance.owned":"insurance.none",b.insurance?"보유":"없음")});
-  const drawBtn=document.getElementById("drawBtn");
-  if(drawBtn){
-    drawBtn.textContent=!state.drawOffer?langText("button.drawRequest","\ubb34\uc2b9\ubd80 \uc694\uccad"):state.drawOffer===state.turn?langText("button.drawCancel","\uc694\uccad \ucde8\uc18c"):langText("button.drawAccept","\ubb34\uc2b9\ubd80 \uc2b9\uc778");
-    drawBtn.disabled=state.gameOver;
-  }
+  updateDrawButton();
   const orbitalBtn=document.getElementById("orbitalStrikeBtn"),orbitalStatus=document.getElementById("orbitalStatus"),orbitalReady=orbitalStrikeReady();
   const orbitalReason=orbitalReady.reason;
   if(orbitalBtn){orbitalBtn.disabled=!orbitalReady.ok||state.mode==="orbital-targeting"||state.gameOver;orbitalBtn.title=orbitalReady.ok?langText("orbital.connecting","궤도 플랫폼 접속"):langText("orbital.unavailable","궤도 빔 사용 불가: {reason}",{reason:orbitalReason});}

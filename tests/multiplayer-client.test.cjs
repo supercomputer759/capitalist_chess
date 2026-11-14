@@ -46,3 +46,7 @@ test('기존 Node 서버는 명시적 전송 설정으로 계속 실행 가능',
 test('만료된 방 재접속은 무한 재시도하지 않고 세션 정리',async()=>{
   const e=environment();await e.client.joinRoom('ABCDEF');Object.assign(e.client,{reconnecting:true,token:'expired',role:'host'});e.client.receive(JSON.stringify({type:'error',message:'Reconnect session not found'}));assert.equal(e.client.token,'');assert.equal(e.client.reconnecting,false);assert.equal(e.client.intentionalDisconnect,true);assert.equal(e.client.status,'error');
 });
+test('이전 서버의 정원 초과 응답도 같은 연결에서 관전으로 전환',async()=>{
+  const e=environment();await e.client.joinRoom('ABCDEF');e.client.receive(JSON.stringify({type:'error',message:'Room is full or waiting for reconnect'}));assert.equal(e.sockets.length,1);assert.equal(e.sockets[0].sent.at(-1).type,'watch');
+  e.client.receive(JSON.stringify({type:'watched',code:'ABCDEF',token:'watch-token',role:'spectator'}));assert.equal(e.client.role,'spectator');assert.equal(e.client.pendingEntry,null);
+});
