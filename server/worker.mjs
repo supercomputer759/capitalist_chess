@@ -207,7 +207,13 @@ export class ChessRoom extends DurableObject {
       if (message.state?.started === true && !room.guestConnection) {
         return send(ws, {type: "error", message: "Opponent required to start"});
       }
-      room.state = message.state; room.revision = Number(message.revision) || 0;
+      const revision = Number(message.revision);
+      if (!Number.isSafeInteger(revision)) return;
+      if (revision <= room.revision) {
+        send(ws, {type: "state", state: room.state, revision: room.revision});
+        return;
+      }
+      room.state = message.state; room.revision = revision;
       await this.save();
       const update = {type: "state", state: room.state, revision: room.revision};
       for (const peer of this.sockets()) {

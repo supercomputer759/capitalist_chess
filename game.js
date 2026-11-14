@@ -523,6 +523,12 @@ function applyEconomySettings(settings = {}) {
 function applyGameState(snapshot) {
     if (!snapshot || snapshot.schemaVersion !== 1)
         return false;
+    const boardChanged = Boolean(
+        snapshot.board && JSON.stringify(snapshot.board) !== JSON.stringify(state.board)
+    );
+    const turnChanged = Boolean(snapshot.turn && snapshot.turn !== state.turn);
+    const turnNoChanged = Number(snapshot.turnNo || state.turnNo) !== state.turnNo;
+    const startedChanged = Boolean(snapshot.started) !== state.started;
     const previousEvalMoveId = state.positionEval
         ?.moveId;
     const previousPriceMultiplier = state.economyRules.priceMultiplier;
@@ -604,6 +610,7 @@ function applyGameState(snapshot) {
             .player(state.players[color]);
     const wasGameOver = state.gameOver;
     state.gameOver = Boolean(snapshot.gameOver);
+    const gameOverChanged = wasGameOver !== state.gameOver;
     state.gameResult = snapshot.gameResult || null;
     state.specialStock = snapshot.specialStock || {};
     state.specialRestockTurn = Number(snapshot.specialRestockTurn || 0);
@@ -616,9 +623,11 @@ function applyGameState(snapshot) {
     state.engineAwarded = new Set();
     if (previousPriceMultiplier !== state.economyRules.priceMultiplier)
         buildShop();
-    state.selected = null;
-    state.legalTargets = [];
-    state.mode = null;
+    if (boardChanged || turnChanged || turnNoChanged || startedChanged || gameOverChanged) {
+        state.selected = null;
+        state.legalTargets = [];
+        state.mode = null;
+    }
     render();
     renderTurnTimer();
     if (

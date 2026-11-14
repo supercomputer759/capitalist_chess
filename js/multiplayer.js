@@ -66,7 +66,7 @@
         if(!response.ok)throw new Error(text("network.multiplayerError","멀티플레이 오류"));
         const reservation=await response.json();this.code=reservation.code;createToken=reservation.createToken;
       }
-      await this.connect();this.send({type:"create",createToken,state:window.serializeGameState?.()||null,revision:window.gameState?.engineRevision||0});
+      await this.connect();this.send({type:"create",createToken,state:window.serializeGameState?.()||null,revision:this.stateRevision});
     }
     async joinRoom(code){if(this.role==="host"&&this.code&&this.token)throw new Error(text("network.hostLeaveBeforeRoleChange","방장이 역할을 바꾸려면 먼저 방에서 나가야 합니다."));this.resetConnection();this.pendingEntry="join";this.code=String(code||"").trim().toUpperCase();if(!this.code)throw new Error(text("network.codeRequired","방 코드를 입력해줘."));await this.connect();this.send({type:"join",code:this.code});}
     async watchRoom(code){if(this.role==="host"&&this.code&&this.token)throw new Error(text("network.hostLeaveBeforeRoleChange","방장이 역할을 바꾸려면 먼저 방에서 나가야 합니다."));this.resetConnection();this.code=String(code||"").trim().toUpperCase();if(!this.code)throw new Error(text("network.codeRequired","방 코드를 입력해줘."));await this.connect();this.send({type:"watch",code:this.code});}
@@ -74,7 +74,7 @@
     sendChat(text){const value=String(text||"").trim().slice(0,200);if(!value||!this.code||!this.token||this.socket?.readyState!==1)return false;this.send({type:"chat",text:value});return true;}
     resign(){if(this.role!=="host"&&this.role!=="guest")return false;this.sendAction({type:"resign"});return true;}
     closeRoom(){if(this.role!=="host"||this.socket?.readyState!==1)return false;this.send({type:"closeRoom"});return true;}
-    sendState(state){if(this.role!=="host")return false;this.stateRevision=Number(state?.revision||0);this.saveSession();this.send({type:"state",revision:this.stateRevision,state});return true;}
+    sendState(state){if(this.role!=="host"||this.socket?.readyState!==1)return false;const revision=this.stateRevision+1;this.send({type:"state",revision,state});this.stateRevision=revision;this.saveSession();return true;}
     sendOrbitalStrikeResult(result){if(this.role!=="host")return false;this.send({type:"orbitalStrikeResult",result});return true;}
     requestSync(){this.send({type:"sync",revision:this.stateRevision});}
     cancelReconnect(){if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null;}this.reconnectAttempt=0;this.reconnecting=false;}
@@ -84,7 +84,7 @@
       if(message.type==="heartbeatAck"){this.lastHeartbeatAck=Number(message.at||Date.now());return;}
       if(message.type==="roomCreated"||message.type==="joined"||message.type==="watched"||message.type==="reconnected"){
         this.pendingEntry=null;
-        this.roomEndNotified=false;this.code=message.code||this.code;this.token=message.token||this.token;this.role=message.role||this.role;this.opponentPresent=Boolean(message.opponentConnected);this.stateRevision=Number(message.revision||this.stateRevision);this.reconnecting=false;this.reconnectAttempt=0;this.saveSession();this.setStatus("room",`${this.code} · ${this.role}`);this.updateRoomUI();
+        this.roomEndNotified=false;this.code=message.code||this.code;this.token=message.token||this.token;this.role=message.role||this.role;this.opponentPresent=Boolean(message.opponentConnected);this.stateRevision=Number.isSafeInteger(Number(message.revision))?Number(message.revision):0;this.reconnecting=false;this.reconnectAttempt=0;this.saveSession();this.setStatus("room",`${this.code} · ${this.role}`);this.updateRoomUI();
         if(message.state)this.onState?.(message.state,this.stateRevision);
         return;
       }
@@ -96,7 +96,11 @@
       if(message.type==="guestLeft"){this.opponentPresent=false;this.updateRoomUI();return this.setStatus("waiting",text("network.opponentLeft","상대가 방을 나갔어."));}
       if(message.type==="hostLeft"){this.clearSession();this.setStatus("offline",text("network.opponentLeft","상대가 방을 나갔습니다."));this.notifyRoomEnded();return;}
       if(message.type==="roomClosed"){this.intentionalDisconnect=true;this.cancelReconnect();this.socket?.close();this.clearSession();this.setStatus("offline",message.reason==="hostTimeout"?text("network.hostTimeout","방장이 재접속하지 않아 방이 종료되었습니다."):text("network.roomClosed","방이 종료되었습니다."));this.notifyRoomEnded();return;}
-      if(message.type==="state"){this.stateRevision=Number(message.revision||0);this.saveSession();this.onState?.(message.state,this.stateRevision);return;}
+      if(message.type==="state"){
+        const revision=Number(message.revision);
+        if(!Number.isSafeInteger(revision)||revision<=this.stateRevision)return;
+        this.stateRevision=revision;this.saveSession();this.onState?.(message.state,this.stateRevision);return;
+      }
       if(message.type==="orbitalStrikeResult"){window.handleOrbitalStrikeResult?.(message.result);return;}
       if(message.type==="action"){this.onAction?.(message.action,message.token);return;}
       if(message.type==="chat"){this.onChat?.(message);return;}

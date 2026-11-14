@@ -128,7 +128,6 @@
   function ownColor() { return window.multiplayerColorForRole?.(host.role()) || host.state.turn; }
   function render() {
     if (!host) return;
-    syncLobby();
     const state = host.state, color = ownColor(), p = R.player(state.players[color]);
     const active = state.started && !state.gameOver && state.turn === color && host.role() !== "spectator";
     const auctionPanel = document.getElementById("auctionPanel"), financePanel = document.getElementById("financePanel");
