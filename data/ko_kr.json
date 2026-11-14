@@ -364,6 +364,8 @@
   "audio.soundOff": "효과음 꺼짐",
   "audio.bgmOn": "배경음악 켜짐",
   "audio.bgmOff": "배경음악 꺼짐",
+  "audio.soundLabel": "효과음",
+  "audio.bgmLabel": "배경음악",
   "rarity.common": "일반",
   "network.noServer": "배포 사이트에 WebSocket 서버 주소가 설정되지 않았습니다.",
   "network.reconnectingDetail": "재연결 중...",

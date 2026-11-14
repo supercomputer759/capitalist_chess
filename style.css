@@ -3253,3 +3253,26 @@ footer {
     background: #fff;
     color: var(--ink);
 }
+.lobby-audio-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 12px;
+    color: var(--muted);
+    font-size: 12px;
+}
+.lobby-audio-label {
+    margin-right: 3px;
+}
+.lobby-audio-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 9px;
+}
+.lobby-audio-toggle img {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+}

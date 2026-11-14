@@ -317,6 +317,8 @@
   "audio.soundOff": "Sound off",
   "audio.bgmOn": "Music on",
   "audio.bgmOff": "Music off",
+  "audio.soundLabel": "Sound effects",
+  "audio.bgmLabel": "Background music",
   "chat.you": "You",
   "chat.spectator": "Spectator",
   "chat.player": "Player",

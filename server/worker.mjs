@@ -208,7 +208,12 @@ export class ChessRoom extends DurableObject {
         return send(ws, {type: "error", message: "Opponent required to start"});
       }
       room.state = message.state; room.revision = Number(message.revision) || 0;
-      await this.save(); return this.broadcast({type: "state", state: room.state, revision: room.revision});
+      await this.save();
+      const update = {type: "state", state: room.state, revision: room.revision};
+      for (const peer of this.sockets()) {
+        if (peer !== ws) send(peer, update);
+      }
+      return;
     }
     if (message.type === "orbitalStrikeResult" && session.role === "host") return this.broadcast({type: "orbitalStrikeResult", result: message.result});
     if (message.type === "action" && session.role === "guest") return send(this.peer("host"), {type: "action", action: message.action, token: session.token});

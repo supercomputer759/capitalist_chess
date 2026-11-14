@@ -352,23 +352,29 @@ function stopBgm() {
     }
 }
 function renderAudioControls() {
-    const sound = document.getElementById("soundToggleIcon"),
-        bgm = document.getElementById("bgmToggleIcon");
-    if (sound) {
-        sound.src = `assets/images/sound_${state.audio.sound
-            ? "on"
-            : "off"}.png`;
-        sound.alt = state.audio.sound
-            ? langText("audio.soundOn", "효과음 켜짐")
-            : langText("audio.soundOff", "효과음 꺼짐");
+    const soundIcon = `assets/images/sound_${state.audio.sound ? "on" : "off"}.png`;
+    const soundLabel = langText("audio.soundOn", "효과음 켜짐");
+    const soundOffLabel = langText("audio.soundOff", "효과음 꺼짐");
+    const bgmIcon = `assets/images/bgm_${state.audio.bgm ? "on" : "off"}.png`;
+    const bgmLabel = langText("audio.bgmOn", "배경음악 켜짐");
+    const bgmOffLabel = langText("audio.bgmOff", "배경음악 꺼짐");
+    for (const id of ["soundToggleIcon", "lobbySoundToggleIcon"]) {
+        const icon = document.getElementById(id);
+        if (!icon) continue;
+        icon.src = soundIcon;
+        icon.alt = state.audio.sound ? soundLabel : soundOffLabel;
     }
-    if (bgm) {
-        bgm.src = `assets/images/bgm_${state.audio.bgm
-            ? "on"
-            : "off"}.png`;
-        bgm.alt = state.audio.bgm
-            ? langText("audio.bgmOn", "배경음악 켜짐")
-            : langText("audio.bgmOff", "배경음악 꺼짐");
+    for (const id of ["bgmToggleIcon", "lobbyBgmToggleIcon"]) {
+        const icon = document.getElementById(id);
+        if (!icon) continue;
+        icon.src = bgmIcon;
+        icon.alt = state.audio.bgm ? bgmLabel : bgmOffLabel;
+    }
+    for (const id of ["soundToggle", "lobbySoundToggle"]) {
+        document.getElementById(id)?.setAttribute("aria-pressed", String(state.audio.sound));
+    }
+    for (const id of ["bgmToggle", "lobbyBgmToggle"]) {
+        document.getElementById(id)?.setAttribute("aria-pressed", String(state.audio.bgm));
     }
 }
 function renderStockfishDebugControl() {
@@ -398,19 +404,25 @@ function bindAudioControls() {
     loadAudioSettings();
     renderAudioControls();
     renderStockfishDebugControl();
-    document.getElementById("soundToggle")?.addEventListener("click", () => {
+    const toggleSound = () => {
         state.audio.sound = !state.audio.sound;
         saveAudioSettings();
         renderAudioControls();
         if (state.audio.sound) playSound("click");
-    });
-    document.getElementById("bgmToggle")?.addEventListener("click", () => {
+    };
+    const toggleBgm = () => {
         state.audio.bgm = !state.audio.bgm;
         saveAudioSettings();
         if (state.audio.bgm) startBgm();
         else stopBgm();
         renderAudioControls();
-    });
+    };
+    for (const id of ["soundToggle", "lobbySoundToggle"]) {
+        document.getElementById(id)?.addEventListener("click", toggleSound);
+    }
+    for (const id of ["bgmToggle", "lobbyBgmToggle"]) {
+        document.getElementById(id)?.addEventListener("click", toggleBgm);
+    }
     document.getElementById("stockfishDebugToggle")?.addEventListener("click", () => {
         setStockfishDebug(!DEBUG_STOCKFISH);
     });
@@ -1363,12 +1375,14 @@ function setupLobby() {
             .getElementById("lobbyCreateRoomBtn")
             ?.addEventListener(
                 "click",
-                () => window.multiplayer
-                    ?.createRoom().catch(error => {
-                        if (connection)
-                            connection.textContent = error.message;
-                        }
-                    )
+                () => {
+                    publishEconomyLobby();
+                    window.multiplayer
+                        ?.createRoom().catch(error => {
+                            if (connection)
+                                connection.textContent = error.message;
+                        });
+                }
             );
     document
             .getElementById("lobbyJoinRoomBtn")
@@ -1488,8 +1502,6 @@ function setupLobby() {
             if (roomStatus && mode === "multi" && !detail)
                 roomStatus.textContent = window.multiplayer.status;
             update();
-            if (multiplayerRole() === "host" && !state.started)
-                publishEconomyLobby();
             };
         window.addEventListener("game-language-change", () => {
             renderInternet(

@@ -24,6 +24,15 @@
                             <option value="en_us">English (US)</option>
                         </select>
                     </label>
+                    <div class="lobby-audio-controls" aria-label="오디오 설정" data-i18n-aria="audio.settings">
+                        <span class="lobby-audio-label" data-i18n="audio.settings">오디오 설정</span>
+                        <button class="ghost lobby-audio-toggle" id="lobbySoundToggle" type="button" title="효과음 켜기/끄기" data-i18n-title="audio.soundToggle" aria-pressed="true">
+                            <img id="lobbySoundToggleIcon" src="assets/images/sound_on.png" alt="효과음 켜짐"><span data-i18n="audio.soundLabel">효과음</span>
+                        </button>
+                        <button class="ghost lobby-audio-toggle" id="lobbyBgmToggle" type="button" title="배경음악 켜기/끄기" data-i18n-title="audio.bgmToggle" aria-pressed="true">
+                            <img id="lobbyBgmToggleIcon" src="assets/images/bgm_on.png" alt="배경음악 켜짐"><span data-i18n="audio.bgmLabel">배경음악</span>
+                        </button>
+                    </div>
                     <div class="lobby-mode-grid">
                         <button class="lobby-mode active" id="singleModeBtn" type="button">
                             <strong data-i18n="lobby.singleMode">싱글플레이</strong>
@@ -248,7 +257,7 @@
                     </div>
                     <h1>
                         <span data-i18n="brand.name">자본주의 체스</span>
-                        <span>v0.451</span></h1>
+                        <span>v0.453</span></h1>
                     <div class="engine-pill" id="engineStatus">Stockfish: 확인 중…</div>
                 </div>
                 <section class="headline-strip" aria-label="주요 뉴스" data-i18n-aria="market.news">
