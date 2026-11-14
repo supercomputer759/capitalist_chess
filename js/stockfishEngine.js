@@ -30,7 +30,9 @@
       if(bestmove){
         const best=bestmove[1]||null;
         const lines=[...request.lines.values()].sort((a,b)=>a.multipv-b.multipv);
-        this.finishRequest({bestmove:best,depth:request.depth||0,score:lines[0]?.score||request.score,lines,valid:Boolean(best&&best!=="(none)"&&(request.depth||0)>0),invalidReason:best==="(none)"?"bestmove (none)":(request.depth||0)<=0?"depth <= 0":null});
+        const score=lines[0]?.score||request.score,hasScore=Boolean(score);
+        const depth=request.depth||0,terminalNoMove=best==="(none)";
+        this.finishRequest({bestmove:best,depth,score,lines,valid:Boolean(hasScore&&(depth>0||terminalNoMove)),invalidReason:!hasScore?terminalNoMove?"no legal move score unavailable":"score unavailable":depth<=0&&!terminalNoMove?"depth <= 0":null});
       }
     }
     finishRequest(result){const request=this.pending;if(!request)return;this.pending=null;clearTimeout(request.timeout);this.emit("ready");request.resolve(result);}

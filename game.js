@@ -472,6 +472,12 @@ function serializeGameState() {
         clock: state.clock,
         drawOffer: state.drawOffer,
         positionEval: state.positionEval,
+        stocks: Object.fromEntries(
+            Object.entries(STOCKS).map(([id, stock]) => [id, {
+                price: stock.price,
+                last: stock.last
+            }])
+        ),
         news: state.news,
         recentNewsIds: state.recentNewsIds
     }));
@@ -523,12 +529,59 @@ function applyEconomySettings(settings = {}) {
 function applyGameState(snapshot) {
     if (!snapshot || snapshot.schemaVersion !== 1)
         return false;
+    if (snapshot.stocks && typeof snapshot.stocks === "object") {
+        for (const [id, stock] of Object.entries(STOCKS)) {
+            const incoming = snapshot.stocks[id];
+            const price = Number(incoming?.price);
+            const last = Number(incoming?.last);
+            if (!Number.isFinite(price) || price < 10 || !Number.isFinite(last) || last <= 0)
+                continue;
+            stock.price = price;
+            stock.last = last;
+        }
+    }
+    const wasStarted = state.started;
+    const previousTurn = state.turn;
+    const previousLastMove = state.lastMove;
+    const previousRestockTurn = state.specialRestockTurn;
+    const role = multiplayerRole();
+    const ownColor = multiplayerColorForRole(role);
     const boardChanged = Boolean(
         snapshot.board && JSON.stringify(snapshot.board) !== JSON.stringify(state.board)
     );
     const turnChanged = Boolean(snapshot.turn && snapshot.turn !== state.turn);
     const turnNoChanged = Number(snapshot.turnNo || state.turnNo) !== state.turnNo;
     const startedChanged = Boolean(snapshot.started) !== state.started;
+    const restockChanged = Number(snapshot.specialRestockTurn || 0) !== previousRestockTurn;
+    const moveChanged = Boolean(
+        snapshot.lastMove && JSON.stringify(snapshot.lastMove) !== JSON.stringify(previousLastMove)
+    );
+    const checkedColor = snapshot.lastMove?.color
+        ? enemyColor(snapshot.lastMove.color)
+        : null;
+    const moveGaveCheck = Boolean(
+        moveChanged && checkedColor && snapshot.started && !snapshot.gameOver &&
+        snapshot.board && isKingInCheck(checkedColor, snapshot.board)
+    );
+    const opponentColor = ownColor ? enemyColor(ownColor) : null;
+    const opponentDataChanged = Boolean(
+        opponentColor && snapshot.players?.[opponentColor] &&
+        JSON.stringify(snapshot.players[opponentColor]) !== JSON.stringify(state.players[opponentColor])
+    );
+    const sharedStateChanged = [
+        [snapshot.drawOffer || null, state.drawOffer || null],
+        [snapshot.auctions || [], state.auctions || []],
+        [snapshot.properties || {}, state.properties || {}]
+    ].some(([next, previous]) => JSON.stringify(next) !== JSON.stringify(previous));
+    const opponentMove = moveChanged && snapshot.lastMove.color &&
+        (role === "spectator" || snapshot.lastMove.color !== ownColor);
+    let opponentMoveCaptured = false;
+    if (opponentMove && snapshot.board) {
+        const mover = snapshot.lastMove.color;
+        const countPieces = (board, color) => board.flat().filter(piece => piece?.color === color).length;
+        opponentMoveCaptured = countPieces(state.board, enemyColor(mover)) >
+            countPieces(snapshot.board, enemyColor(mover));
+    }
     const previousEvalMoveId = state.positionEval
         ?.moveId;
     const previousPriceMultiplier = state.economyRules.priceMultiplier;
@@ -571,7 +624,6 @@ function applyGameState(snapshot) {
             else
                 input.value = value;
             }
-        const wasStarted = state.started;
     state.started = Boolean(snapshot.started);
     state.stockfishEnabled = snapshot.stockfishEnabled !== false;
     state.specialEnabled = snapshot.specialEnabled !== false;
@@ -621,6 +673,19 @@ function applyGameState(snapshot) {
     state.recentNewsIds = snapshot.recentNewsIds || [];
     state.engineRevision = Number(snapshot.revision || 0);
     state.engineAwarded = new Set();
+    if (wasStarted && state.started && restockChanged)
+        announceRarePieceArrival(state.specialStock);
+    if (wasStarted && state.started && ["guest", "spectator"].includes(role)) {
+        const opponentTurnEnded = turnChanged && (role === "spectator" || previousTurn !== ownColor);
+        const opponentBoardAction = boardChanged && (role === "spectator" || previousTurn !== ownColor);
+        const opponentAction = opponentMove || opponentTurnEnded || opponentBoardAction ||
+            (!turnChanged && (opponentDataChanged || sharedStateChanged)) ||
+            (role === "spectator" && (opponentDataChanged || sharedStateChanged));
+        if (opponentMove)
+            playSound(opponentMoveCaptured ? "capture" : "move");
+        else if (opponentAction && !restockChanged)
+            playSound("click");
+    }
     if (previousPriceMultiplier !== state.economyRules.priceMultiplier)
         buildShop();
     if (boardChanged || turnChanged || turnNoChanged || startedChanged || gameOverChanged) {
@@ -630,6 +695,8 @@ function applyGameState(snapshot) {
     }
     render();
     renderTurnTimer();
+    if (moveGaveCheck)
+        showCheckAlert(checkedColor);
     if (
         ["guest", "spectator"].includes(multiplayerRole()) && state.positionEval
             ?.moveId && state.positionEval.moveId !== previousEvalMoveId
@@ -698,6 +765,10 @@ function multiplayerOwnsColor(color) {
     if (role === "spectator")
         return false;
     return true;
+}
+function canControlCurrentTurn() {
+    return state.started && !state.gameOver && multiplayerRole() !== "spectator" &&
+        multiplayerOwnsColor(state.turn);
 }
 function multiplayerOwnsSquare(square) {
     return Boolean(square && multiplayerOwnsColor(
@@ -809,18 +880,24 @@ function rejectRemoteTurn() {
 window.handleMultiplayerAction = function (action) {
     if (multiplayerRole() !== "host" || !action)
         return;
+    const remoteColor = multiplayerColorForRole("guest") || "b";
     if (action.type === "economyExpansion")
-        return handleEconomyExpansion("b", action);
+        return handleEconomyExpansion(remoteColor, action);
     if (action.type === "resign")
-        return finishGame("w", "흑 기권", "result.resigned", {side: "b"});
+        return finishGame(
+            multiplayerColorForRole("host") || "w",
+            `${sideName(remoteColor)} 기권`,
+            "result.resigned",
+            {side: remoteColor}
+        );
+    if (state.turn !== remoteColor)
+        return;
     if (action.type === "orbitalStrike")
         return executeOrbitalStrike(action.target);
-    if (state.turn !== "b")
-        return;
     if (action.type === "endTurn")
-        return endTurn();
+        return endTurn(false, true);
     if (action.type === "draw")
-        return requestDrawFor("b");
+        return requestDrawFor(remoteColor);
     if (action.type === "purchase") {
         state.mode = action.specialId
             ? "special-buy"
@@ -830,7 +907,7 @@ window.handleMultiplayerAction = function (action) {
         return finishPurchase(action.r, action.c);
     }
     if (action.type === "teleport") {
-        if (!multiplayerOwnsSquare(action.selected))
+        if (state.board[action.selected?.r]?.[action.selected?.c]?.color !== remoteColor)
             return;
         state.selected = action.selected;
         return finishTeleport(action.r, action.c);
@@ -839,7 +916,7 @@ window.handleMultiplayerAction = function (action) {
         if (
             !action.source || state.board[action.source.r]
                 ?.[action.source.c]
-                    ?.color !== "b"
+                    ?.color !== remoteColor
         )
             return;
         return executePieceAbility(
@@ -861,7 +938,7 @@ window.handleMultiplayerAction = function (action) {
         "stockBuy",
         "stockSell"
     ].includes(action.type)) {
-        if (action.selected && !multiplayerOwnsSquare(action.selected))
+        if (action.selected && state.board[action.selected.r]?.[action.selected.c]?.color !== remoteColor)
             return;
         if (action.selected) {
             state.selected = action.selected;
@@ -902,7 +979,7 @@ window.handleMultiplayerAction = function (action) {
                 : null;
     if (!from || !to)
         return;
-    if (!moving || moving.color !== "b")
+    if (!moving || moving.color !== remoteColor)
         return log(langText("notice.blackOnly", "흑 기물만 조작할 수 있어."), "bad");
     const legal = legalMovesFor(from.r, from.c).some(
         cell => cell.r === to.r && cell.c === to.c
@@ -912,23 +989,55 @@ window.handleMultiplayerAction = function (action) {
             langText("notice.illegalGuestMove", "온라인 상대의 불법 이동 요청을 거부했어."),
             "bad"
         );
-    makeMove(from.r, from.c, to.r, to.c);
+    const promotion = ["q", "r", "b", "n"].includes(action.promotion)
+        ? action.promotion
+        : "q";
+    const promotes = moving.type === "p" && !moving.specialId && (
+        to.r === 0 || to.r === 7
+    );
+    makeMove(from.r, from.c, to.r, to.c, promotion);
+    // 원격 수 적용 중 특수 포획 처리 등이 승급을 건너뛰더라도 호스트 보드에 결과를 확정합니다.
+    const movedPiece = state.board[to.r]?.[to.c];
+    if (
+        promotes && movedPiece?.id === moving.id && movedPiece.color === remoteColor &&
+        movedPiece.type !== promotion
+    ) {
+        promotePawnAt(to.r, to.c, promotion);
+        if (
+            state.lastMove?.fr === from.r && state.lastMove?.fc === from.c &&
+            state.lastMove?.tr === to.r && state.lastMove?.tc === to.c
+        )
+            state.lastMove.promotion = promotion;
+        render();
+    }
 };
 function runMultiplayerAction(type, local, payload = () => ({})) {
     return(...args) => {
+        const role = multiplayerRole();
+        if (role === "spectator") {
+            log(langText("notice.spectatorAction", "관전자는 게임 행동을 할 수 없어."), "bad");
+            return;
+        }
+        if (!canControlCurrentTurn())
+            return rejectRemoteTurn();
+        if (
+            type === "endTurn" && activeInCheck() &&
+            !confirm(langText(
+                "dialog.endTurnInCheck",
+                "현재 킹이 체크 상태입니다. 그래도 턴을 종료하시겠습니까?"
+            ))
+        )
+            return;
         if (type === "draw" && !canRequestDraw())
             return rejectRemoteTurn();
-        if (multiplayerRole() === "guest") {
+        if (role === "guest") {
+            if (type === "endTurn") playSound("click");
             window
                 .multiplayer
                 .sendAction({
                     type,
                     ...payload(...args)
                 });
-            return;
-        }
-        if (multiplayerRole() === "spectator") {
-            log(langText("notice.spectatorAction", "관전자는 게임 행동을 할 수 없어."), "bad");
             return;
         }
         local(...args);
@@ -2347,15 +2456,85 @@ function restockSpecialPieces(initial = false) {
             });
         }
     }
-    const rareRestocked = ["black_hole", "chaebol_king", "mounted_king", "mounted_king_mk2"].some(
-        id => (state.specialStock[id] || 0) > 0
-    );
-    if (rareRestocked)
-        playSound("rare-restock");
+    if (!initial)
+        announceRarePieceArrival(state.specialStock);
     state.specialRestockTurn = state.turnNo;
     if (!initial)
         log(langText("notice.marketRestocked", "특수기물 시장 전체 재입고."), "gold");
     }
+
+function announceRarePieceArrival(stock) {
+    const rarityRank = {common: 0, rare: 1, legendary: 2, mythic: 3};
+    const featured = SpecialPieces.list()
+        .filter(def =>
+            (rarityRank[String(def.rarity).toLowerCase()] || 0) >= 1 &&
+            Number(stock?.[def.id]) > 0
+        )
+        .sort((a, b) =>
+            (rarityRank[String(b.rarity).toLowerCase()] || 0) -
+            (rarityRank[String(a.rarity).toLowerCase()] || 0)
+        )[0];
+    if (!featured) return;
+    const overlay = document.getElementById("rarePieceArrival");
+    if (!overlay) return;
+    clearTimeout(overlay._hideTimer);
+    document.getElementById("rarePieceVisual").innerHTML = specialChessVisual(
+        featured,
+        "w",
+        specialPieceName(featured)
+    );
+    document.getElementById("rarePieceName").textContent = specialPieceName(featured);
+    document.getElementById("rarePieceRarity").textContent = langText(
+        `rarity.${String(featured.rarity).toLowerCase()}`,
+        featured.rarity
+    );
+    document.getElementById("rarePieceCount").textContent = langText(
+        "shop.stockCount",
+        "{count}개 입고",
+        {count: Number(stock[featured.id])}
+    );
+    overlay.classList.remove("show");
+    overlay.setAttribute("aria-hidden", "false");
+    void overlay.offsetWidth;
+    overlay.classList.add("show");
+    playSound("rare-restock");
+    overlay._hideTimer = setTimeout(() => {
+        overlay.classList.remove("show");
+        overlay.setAttribute("aria-hidden", "true");
+    }, 3800);
+}
+
+function showCheckAlert(color) {
+    const overlay = document.getElementById("checkAlertOverlay");
+    if (!overlay) return;
+    clearTimeout(overlay._hideTimer);
+    overlay.replaceChildren();
+    const card = document.createElement("div");
+    card.className = "check-alert-card";
+    const mark = document.createElement("span");
+    mark.className = "check-alert-mark";
+    mark.textContent = "♟";
+    const title = document.createElement("strong");
+    title.className = "check-alert-title";
+    title.textContent = langText("check.alertTitle", "체크!");
+    const side = document.createElement("span");
+    side.className = "check-alert-side";
+    side.textContent = langText("check.alertSide", "{side} 킹이 공격받고 있습니다", {
+        side: color === "w"
+            ? langText("game.white", "백")
+            : langText("game.black", "흑")
+    });
+    card.append(mark, title, side);
+    overlay.appendChild(card);
+    overlay.classList.remove("show");
+    overlay.setAttribute("aria-hidden", "false");
+    void overlay.offsetWidth;
+    overlay.classList.add("show");
+    overlay._hideTimer = setTimeout(() => {
+        overlay.classList.remove("show");
+        overlay.setAttribute("aria-hidden", "true");
+    }, 2400);
+}
 
 function buildBoard() {
     const board = document.getElementById("board");
@@ -2647,7 +2826,7 @@ function dropSquare(e, r, c) {
     state.justDragged = Date.now();
     state.dragFrom = null;
     if (legal)
-        makeMove(from.r, from.c, r, c);
+        requestMove(from.r, from.c, r, c);
     else {
         state.selected = {
             r: from.r,
@@ -2923,9 +3102,13 @@ function buildSpecialShop() {
     function clickSquare(r, c) {
         if (state.gameOver)
             return;
+        if (
+            state.mode &&
+            ["buy", "special-buy", "teleport", "taxi-passenger", "taxi-destination", "piece-ability-target", "warehouse-deploy"].includes(state.mode) &&
+            !canControlCurrentTurn()
+        )
+            return rejectRemoteTurn();
         if (state.mode === "orbital-targeting")
-            return;
-        if (multiplayerRole() === "spectator")
             return;
         playSound("click");
         if (Date.now() - state.justDragged < 180)
@@ -3018,24 +3201,9 @@ function buildSpecialShop() {
         const isLegal = state
             .legalTargets
             .some(x => x.r === r && x.c === c);
-        if (state.selected && isLegal) {
-            if (multiplayerRole() === "guest" && state.turn === multiplayerColorForRole("guest") && multiplayerOwnsSquare(state.selected)) {
-                window
-                    .multiplayer
-                    .sendAction({
-                        type: "move",
-                        from: sqName(state.selected.r, state.selected.c),
-                        to: sqName(r, c)
-                    });
-                return;
-            }
-            if (multiplayerRole() === "guest" || multiplayerRole() === "host" && !multiplayerOwnsSquare(state.selected))
-                return rejectRemoteTurn();
-            return makeMove(state.selected.r, state.selected.c, r, c);
-        }
+        if (state.selected && isLegal)
+            return requestMove(state.selected.r, state.selected.c, r, c);
 
-        if (p && !multiplayerOwnsColor(p.color))
-            return rejectRemoteTurn();
         state.selected = {
             r,
             c
@@ -3115,6 +3283,8 @@ function buildSpecialShop() {
     function startOrbitalStrike() {
         if (multiplayerRole() === "spectator")
             return log(langText("notice.orbitalSpectator", "관전자는 궤도 빔을 사용할 수 없어."), "bad");
+        if (!canControlCurrentTurn())
+            return rejectRemoteTurn();
         const ready = orbitalStrikeReady();
         if (!ready.ok)
             return log(`ORBITAL BEAM: ${ready.reason}`, "bad");
@@ -3293,6 +3463,8 @@ function buildSpecialShop() {
     function startPurchase(type) {
         if (multiplayerRole() === "spectator")
             return log(langText("notice.spectatorBuy", "관전자는 구매할 수 없어."), "bad");
+        if (!canControlCurrentTurn())
+            return rejectRemoteTurn();
         if (!canEconomy())
             return;
         if (current().ap < 1)
@@ -3314,6 +3486,8 @@ function buildSpecialShop() {
     function startSpecialPurchase(id) {
         if (multiplayerRole() === "spectator")
             return log(langText("notice.spectatorBuy", "관전자는 구매할 수 없어."), "bad");
+        if (!canControlCurrentTurn())
+            return rejectRemoteTurn();
         const def = specialDef(id),
             stock = state.specialStock[id] || 0;
         if (!def)
@@ -4133,7 +4307,75 @@ function buildSpecialShop() {
                 }), "good");
             }
         }
-    function makeMove(fr, fc, tr, tc) {
+    function openPromotionPicker(color, onChoose) {
+        const modal = document.getElementById("promotionModal");
+        const options = document.getElementById("promotionOptions");
+        if (!modal || !options) return onChoose("q");
+        options.replaceChildren();
+        const labels = {q: "queen", r: "rook", b: "bishop", n: "knight"};
+        for (const type of ["q", "r", "b", "n"]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "promotion-option";
+            button.setAttribute("aria-label", langText(`promotion.${labels[type]}`, stockPieceName(type)));
+            const image = document.createElement("img");
+            image.src = IMG_FALLBACK[color + type];
+            image.alt = "";
+            const name = document.createElement("span");
+            name.textContent = langText(`promotion.${labels[type]}`, stockPieceName(type));
+            button.append(image, name);
+            button.addEventListener("click", () => {
+                modal.classList.add("hidden");
+                onChoose(type);
+            }, {once: true});
+            options.appendChild(button);
+        }
+        modal.classList.remove("hidden");
+        options.querySelector("button")?.focus();
+    }
+
+    function requestMove(fr, fc, tr, tc) {
+        const moving = state.board[fr]?.[fc];
+        if (!moving) return;
+        const isPromotion = moving.type === "p" && !moving.specialId &&
+            (tr === 0 || tr === 7);
+        const submit = promotion => {
+            const role = multiplayerRole();
+            if (role === "guest") {
+                if (
+                    state.turn !== multiplayerColorForRole(role) ||
+                    !multiplayerOwnsSquare({r: fr, c: fc})
+                )
+                    return rejectRemoteTurn();
+                return window.multiplayer.sendAction({
+                    type: "move",
+                    from: sqName(fr, fc),
+                    to: sqName(tr, tc),
+                    ...(isPromotion ? {promotion} : {})
+                });
+            }
+            if (
+                role === "spectator" ||
+                role === "host" && !multiplayerOwnsSquare({r: fr, c: fc})
+            )
+                return rejectRemoteTurn();
+            return makeMove(fr, fc, tr, tc, promotion);
+        };
+        if (isPromotion)
+            return openPromotionPicker(moving.color, submit);
+        return submit("q");
+    }
+
+    function promotePawnAt(r, c, promotionType) {
+        const type = ["q", "r", "b", "n"].includes(promotionType) ? promotionType : "q";
+        state.board[r][c] = {...state.board[r][c], type};
+        const key = `promotion.${({q: "queen", r: "rook", b: "bishop", n: "knight"})[type]}`;
+        log(langText("notice.pawnPromotedTo", "폰이 {piece}(으)로 승급했습니다!", {
+            piece: langText(key, stockPieceName(type))
+        }), "gold");
+    }
+
+    function makeMove(fr, fc, tr, tc, promotionType = "q") {
         if (!inBounds(fr, fc) || !inBounds(tr, tc))
             return;
         const pl = current();
@@ -4232,8 +4474,8 @@ function buildSpecialShop() {
         const beforeBoard = cloneBoard();
         state.enPassant = null;
         const uci = sqName(fr, fc) + sqName(tr, tc) + (
-            moving.type === "p" && (tr === 0 || tr === 7)
-                ? "q"
+            moving.type === "p" && !moving.specialId && (tr === 0 || tr === 7)
+                ? (["q", "r", "b", "n"].includes(promotionType) ? promotionType : "q")
                 : ""
         );
         if (rangedCapture)
@@ -4450,6 +4692,8 @@ function buildSpecialShop() {
                 render();
                 return;
             }
+            if (moving.type === "p" && !moving.specialId && (tr === 0 || tr === 7))
+                promotePawnAt(tr, tc, promotionType);
             const survivor = rangedCapture
                 ? state.board[fr][fc]
                 : state.board[tr][tc];
@@ -4498,7 +4742,10 @@ function buildSpecialShop() {
                 tr,
                 tc,
                 color: state.turn,
-                enPassant: moveInfo.enPassant
+                enPassant: moveInfo.enPassant,
+                promotion: moving.type === "p" && !moving.specialId && (tr === 0 || tr === 7)
+                    ? state.board[tr][tc]?.type
+                    : null
             };
             state.selected = rangedCapture
                 ? {
@@ -4519,6 +4766,9 @@ function buildSpecialShop() {
                     "result.kingCaptured",
                     {side: captured.color}
                 );
+            const givesCheck = !state.gameOver && isKingInCheck(enemyColor(), state.board);
+            if (givesCheck)
+                showCheckAlert(enemyColor());
             evaluateMoveWithStockfish({
                 beforeBoard,
                 afterBoard: cloneBoard(),
@@ -4542,7 +4792,7 @@ function buildSpecialShop() {
                 },
                 info: {
                     capture: true,
-                    check: isKingInCheck(enemyColor(), state.board),
+                    check: givesCheck,
                     capturedValue: piecePrice(captured),
                     movingValue: piecePrice(moving),
                     movingIsStandard: !moving.specialId
@@ -4554,13 +4804,8 @@ function buildSpecialShop() {
             return;
         }
         payMoveIncome(moveEffects, moving);
-        if (moving.type === "p" && (tr === 0 || tr === 7)) {
-            state.board[tr][tc] = {
-                ...state.board[tr][tc],
-                type: "q"
-            };
-            log(langText("notice.pawnPromoted", "폰 승급 → 퀸!"), "gold");
-        }
+        if (moving.type === "p" && !moving.specialId && (tr === 0 || tr === 7))
+            promotePawnAt(tr, tc, promotionType);
         visitSquare(tr, tc, state.turn);
         if (moveInfo.castle)
             visitSquare(moveInfo.castle.to.r, moveInfo.castle.to.c, state.turn);
@@ -4579,8 +4824,12 @@ function buildSpecialShop() {
             tr,
             tc,
             color: state.turn,
-            castle: moveInfo.castle
+            castle: moveInfo.castle,
+            promotion: moving.type === "p" && !moving.specialId && (tr === 0 || tr === 7) ? state.board[tr][tc].type : null
         };
+        const givesCheck = isKingInCheck(enemyColor(), state.board);
+        if (givesCheck)
+            showCheckAlert(enemyColor());
         evaluateMoveWithStockfish({
             beforeBoard,
             afterBoard: cloneBoard(),
@@ -4604,7 +4853,7 @@ function buildSpecialShop() {
             },
             info: {
                 capture: false,
-                check: isKingInCheck(enemyColor(), state.board),
+                check: givesCheck,
                 capturedValue: 0,
                 movingValue: piecePrice(moving),
                 movingIsStandard: !moving.specialId
@@ -4703,6 +4952,8 @@ function buildSpecialShop() {
         renderTileInfo(key);
     }
     function beginPieceAbility(id) {
+        if (!canControlCurrentTurn())
+            return rejectRemoteTurn();
         if (!state.selected || !canEconomy())
             return;
         const p = state.board[state.selected.r][state.selected.c],
@@ -5199,6 +5450,8 @@ function buildSpecialShop() {
                                     render();
                                 }
                                 function startTeleport() {
+                                    if (!canControlCurrentTurn())
+                                        return rejectRemoteTurn();
                                     if (!canEconomy() || !state.selected)
                                         return log(langText("log.teleportSelect", "텔레포트할 자기 기물을 선택해."), "bad");
                                     const p = state.board[state.selected.r][state.selected.c];
@@ -5436,9 +5689,11 @@ function buildSpecialShop() {
                                     showHeadline(state.headlineIndex + 1, false);
                                 }
 
-                                function endTurn(timedOut = false) {
-                                    if (state.gameOver)
+                                function endTurn(timedOut = false, remoteAction = false) {
+                                    if (state.gameOver || !state.started)
                                         return;
+                                    if (!remoteAction && !(timedOut && multiplayerRole() === "host") && !multiplayerOwnsColor(state.turn))
+                                        return rejectRemoteTurn();
                                     playSound(
                                         timedOut
                                             ? "error"
@@ -5653,6 +5908,16 @@ function buildSpecialShop() {
                                                 ? "whiteClock"
                                                 : "blackClock"
                                         );
+                                        const fullscreenEl = document.getElementById(
+                                            color === "w"
+                                                ? "fullscreenWhiteClock"
+                                                : "fullscreenBlackClock"
+                                        );
+                                        if (fullscreenEl) {
+                                            fullscreenEl.textContent = format(state.clock[color]);
+                                            fullscreenEl.classList.toggle("warning", state.clock[color] <= 10);
+                                            fullscreenEl.parentElement.classList.toggle("active", state.turn === color);
+                                        }
                                         if (el) {
                                             el.textContent = format(state.clock[color]);
                                             el
@@ -7130,7 +7395,7 @@ function buildSpecialShop() {
                                     renderAnnotations();
                                     document
                                         .getElementById("endTurnBtn")
-                                        .disabled = state.gameOver;
+                                        .disabled = state.gameOver || !state.started || !multiplayerOwnsColor(state.turn);
                                     if (multiplayerRole() === "host")
                                         window
                                             .multiplayer

@@ -315,7 +315,26 @@
 
             <main class="layout">
                 <section class="workspace">
-                    <div class="board-wrap">
+                    <div class="board-wrap" id="boardWrap">
+                        <button
+                            class="board-fullscreen-toggle ghost"
+                            id="boardFullscreenToggle"
+                            type="button"
+                            aria-label="체스판 전체 화면"
+                            data-i18n-aria="board.fullscreen">
+                            <span class="board-fullscreen-icon" aria-hidden="true">⛶</span>
+                            <span data-fullscreen-label>전체 화면</span>
+                        </button>
+                        <div class="fullscreen-clocks" aria-label="체스 시계">
+                            <div class="fullscreen-clock white">
+                                <span data-i18n="game.white">백</span>
+                                <strong id="fullscreenWhiteClock">15:00</strong>
+                            </div>
+                            <div class="fullscreen-clock black">
+                                <span data-i18n="game.black">흑</span>
+                                <strong id="fullscreenBlackClock">15:00</strong>
+                            </div>
+                        </div>
                         <div class="board-stage">
                             <div class="rank-labels" id="rankLabels"></div>
                             <div class="board" id="board" aria-label="체스판" data-i18n-aria="board.aria"></div>
@@ -552,6 +571,14 @@
             </div>
         </div>
 
+        <div class="modal hidden promotion-modal" id="promotionModal" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
+            <div class="modal-card promotion-card">
+                <h2 id="promotionTitle" data-i18n="promotion.title">승급할 기물을 선택하세요</h2>
+                <p data-i18n="promotion.description">폰이 마지막 칸에 도착했습니다.</p>
+                <div class="promotion-options" id="promotionOptions"></div>
+            </div>
+        </div>
+
         <div
             class="modal hidden"
             id="pieceInfoModal"
@@ -575,8 +602,22 @@
             aria-live="polite"
             aria-hidden="true"></div>
 
+        <div class="check-alert-overlay" id="checkAlertOverlay" aria-live="assertive" aria-hidden="true"></div>
+
+        <div class="rare-piece-arrival" id="rarePieceArrival" aria-live="assertive" aria-hidden="true">
+            <div class="rare-piece-card">
+                <span class="rare-piece-eyebrow" data-i18n="shop.rareArrival">특수기물 입고</span>
+                <div class="rare-piece-visual" id="rarePieceVisual"></div>
+                <strong class="rare-piece-name" id="rarePieceName"></strong>
+                <span class="rare-piece-rarity" id="rarePieceRarity"></span>
+                <span class="rare-piece-count" id="rarePieceCount"></span>
+            </div>
+        </div>
+
         <script src="js/news.js"></script>
         <script src="js/language.js"></script>
+        <script src="js/boardFullscreen.js"></script>
+        <script src="js/uiFeedback.js"></script>
         <script src="js/multiplayerConfig.js"></script>
         <script src="js/multiplayer.js"></script>
         <script src="js/movementHandlers.js"></script>
